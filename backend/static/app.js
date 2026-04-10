@@ -348,12 +348,12 @@ async function importSingleReel() {
 
   try {
     const recipe = await api('/api/reels/process', { method: 'POST', body: JSON.stringify({ url }) });
-    stopTimer();
+    await stopTimer();
     showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
     document.getElementById('reel-url-input').value = '';
     loadLibrary();
   } catch (e) {
-    stopTimer();
+    await stopTimer();
     showStatus(status, 'error', `❌ ${e.message}`);
   } finally {
     btn.disabled = false;
@@ -384,12 +384,12 @@ async function importWebRecipe() {
 
   try {
     const recipe = await api('/api/reels/import-web', { method: 'POST', body: JSON.stringify({ url }) });
-    stopTimer();
+    await stopTimer();
     showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
     document.getElementById('web-url-input').value = '';
     loadLibrary();
   } catch (e) {
-    stopTimer();
+    await stopTimer();
     showStatus(status, 'error', `❌ ${e.message}`);
   } finally {
     btn.disabled = false;
@@ -425,11 +425,11 @@ async function importPhotoRecipe(event) {
       throw new Error(err.detail || resp.statusText);
     }
     const recipe = await resp.json();
-    stopTimer();
+    await stopTimer();
     showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
     loadLibrary();
   } catch (e) {
-    stopTimer();
+    await stopTimer();
     showStatus(status, 'error', `❌ ${e.message}`);
   } finally {
     zone.innerHTML = `<div class="upload-icon">📸</div><div class="upload-text">Click to choose a photo</div><div class="upload-hint">JPEG, PNG, or WebP — up to 20 MB</div>`;
@@ -1248,7 +1248,6 @@ function startImportTimer(el, steps) {
   el.className = 'import-status loading';
   el.style.cssText = 'padding:14px 16px;line-height:1.5';
 
-  // Total expected seconds = sum of all finite step durations
   const totalExpected = steps.reduce((s, x) => s + (x.duration < 999 ? x.duration : 0), 0) || 30;
 
   let stepIdx = 0;
@@ -1257,26 +1256,23 @@ function startImportTimer(el, steps) {
   let pct = 0;
 
   function calcPct() {
-    // Progress through completed steps
     let completedSecs = 0;
     for (let i = 0; i < stepIdx; i++) completedSecs += steps[i].duration < 999 ? steps[i].duration : 0;
-    // Progress within current step (capped at its duration)
     const cur = steps[stepIdx];
     const curDur = cur.duration < 999 ? cur.duration : totalExpected * 0.25;
     const withinStep = Math.min(stepElapsed, curDur);
     const raw = ((completedSecs + withinStep) / totalExpected) * 100;
-    return Math.min(raw, 95); // never reach 100% until stop() is called
+    return Math.min(raw, 95);
   }
 
-  function render() {
-    pct = calcPct();
+  function render(overridePct) {
+    pct = overridePct !== undefined ? overridePct : calcPct();
     const step = steps[stepIdx];
     const barColor = pct < 50
       ? `linear-gradient(90deg, #f59e0b, #f97316)`
       : pct < 85
         ? `linear-gradient(90deg, #f97316, #a855f7)`
         : `linear-gradient(90deg, #a855f7, #6366f1)`;
-
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <span style="font-size:13px;font-weight:500">${step.msg}</span>
@@ -1285,14 +1281,15 @@ function startImportTimer(el, steps) {
       <div style="background:var(--border);border-radius:99px;height:8px;overflow:hidden;margin-bottom:6px">
         <div style="
           height:100%;width:${pct.toFixed(1)}%;
-          background:${barColor};
-          border-radius:99px;
-          transition:width .9s cubic-bezier(.4,0,.2,1);
+          background:${barColor};border-radius:99px;
+          transition:width .7s cubic-bezier(.4,0,.2,1);
           box-shadow:0 0 8px rgba(168,85,247,.4);
         "></div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:11px;opacity:.45">${steps.map((s, i) => i === stepIdx ? `<b style="opacity:1;color:var(--accent)">${s.msg.split(' ').slice(1).join(' ')}</b>` : `<span style="opacity:.4">${s.msg.split(' ').slice(1).join(' ')}</span>`).join(' → ')}</span>
+        <span style="font-size:11px;opacity:.45">${steps.map((s, i) => i === stepIdx
+          ? `<b style="opacity:1;color:var(--accent)">${s.msg.split(' ').slice(1).join(' ')}</b>`
+          : `<span style="opacity:.4">${s.msg.split(' ').slice(1).join(' ')}</span>`).join(' → ')}</span>
         <span style="font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">${Math.round(pct)}%</span>
       </div>`;
   }
@@ -1309,29 +1306,49 @@ function startImportTimer(el, steps) {
     render();
   }, 1000);
 
-  return function stop() {
+  /**
+   * Call when the API responds. Fast-forwards through any unvisited steps
+   * (700 ms each), then animates to 100% and resolves the returned Promise.
+   * Await this before showing the success message so the bar always completes.
+   */
+  function complete() {
     clearInterval(interval);
-    // Flash to 100%
-    pct = 100;
-    const step = steps[steps.length - 1];
-    el.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:13px;font-weight:500">✅ Done!</span>
-        <span style="font-size:11px;opacity:.55;font-variant-numeric:tabular-nums">${elapsed}s elapsed</span>
-      </div>
-      <div style="background:var(--border);border-radius:99px;height:8px;overflow:hidden;margin-bottom:6px">
-        <div style="
-          height:100%;width:100%;
-          background:linear-gradient(90deg,#22c55e,#16a34a);
-          border-radius:99px;
-          transition:width .4s ease;
-          box-shadow:0 0 8px rgba(34,197,94,.4);
-        "></div>
-      </div>
-      <div style="display:flex;justify-content:flex-end">
-        <span style="font-size:13px;font-weight:700;color:#22c55e">100%</span>
-      </div>`;
-  };
+    return new Promise(resolve => {
+      // Step through any remaining steps quickly
+      function advance() {
+        if (stepIdx < steps.length - 1) {
+          stepIdx++;
+          stepElapsed = 0;
+          render();
+          setTimeout(advance, 700);
+        } else {
+          // On last step — show it briefly then go to 100%
+          setTimeout(() => {
+            el.innerHTML = `
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span style="font-size:13px;font-weight:500">✅ Done!</span>
+                <span style="font-size:11px;opacity:.55;font-variant-numeric:tabular-nums">${elapsed}s elapsed</span>
+              </div>
+              <div style="background:var(--border);border-radius:99px;height:8px;overflow:hidden;margin-bottom:6px">
+                <div style="
+                  height:100%;width:100%;
+                  background:linear-gradient(90deg,#22c55e,#16a34a);
+                  border-radius:99px;transition:width .5s ease;
+                  box-shadow:0 0 8px rgba(34,197,94,.4);
+                "></div>
+              </div>
+              <div style="display:flex;justify-content:flex-end">
+                <span style="font-size:13px;font-weight:700;color:#22c55e">100%</span>
+              </div>`;
+            setTimeout(resolve, 400);
+          }, 600);
+        }
+      }
+      advance();
+    });
+  }
+
+  return complete;
 }
 
 function escHtml(str) {

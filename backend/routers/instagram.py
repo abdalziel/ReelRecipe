@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from services.instagram_scraper import run_bulk_import, get_job_status, submit_2fa_code, _current_job
+from services.instagram_scraper import run_bulk_import, get_job_status, submit_2fa_code, request_cancel, _current_job
 
 router = APIRouter(prefix="/api/instagram", tags=["instagram"])
 
@@ -59,6 +59,16 @@ async def submit_two_factor(payload: TwoFactorRequest):
     try:
         await submit_2fa_code(payload.code)
         return {"message": "2FA code accepted"}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post("/bulk-import/cancel", status_code=200)
+def cancel_import_job():
+    """Signal the running import to stop after the current post finishes."""
+    try:
+        request_cancel()
+        return {"message": "Cancellation requested — import will stop after the current item."}
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 

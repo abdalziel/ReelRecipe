@@ -35,6 +35,7 @@ _current_job: dict = {
     "started_at": None,
     "finished_at": None,
 }
+_cancel_requested: bool = False
 
 # 2FA state — holds the pending loader and an asyncio Event to resume the task
 _2fa_event: Optional[asyncio.Event] = None
@@ -53,6 +54,14 @@ async def submit_2fa_code(code: str):
         raise ValueError("No 2FA login is pending")
     _2fa_code = code.strip()
     _2fa_event.set()
+
+
+def request_cancel():
+    """Signal the running import to stop after the current post finishes."""
+    global _cancel_requested
+    if _current_job["status"] not in ("running", "awaiting_2fa"):
+        raise ValueError("No import is running")
+    _cancel_requested = True
 
 
 def _reset_job(total: int):
@@ -169,6 +178,9 @@ async def run_bulk_import(
     if _current_job["status"] == "running":
         return  # Already running
 
+    global _cancel_requested
+    _cancel_requested = False
+
     # Mark running immediately so the UI reflects it before login completes
     _current_job.update({
         "status": "running",
@@ -271,6 +283,17 @@ async def run_bulk_import(
             return
 
         for post in posts:
+            # Check for cancellation before each post
+            if _cancel_requested:
+                _current_job["status"] = "done"
+                _current_job["finished_at"] = datetime.utcnow().isoformat()
+                _current_job["current"] = ""
+                _log(
+                    f"⏹️ Import stopped — {_current_job['imported']} recipe(s) saved, "
+                    f"{_current_job['processed']} of {_current_job['total']} processed."
+                )
+                return
+
             shortcode = post.shortcode
             source_url = f"https://www.instagram.com/p/{shortcode}/"
             _current_job["current"] = post.title or shortcode
@@ -414,7 +437,7 @@ async def run_bulk_import(
     except instaloader.exceptions.BadCredentialsException:
         _current_job["status"] = "error"
         _current_job["finished_at"] = datetime.utcnow().isoformat()
-        _log("❌ Login failed — check your Instagram username and password")
+        _log("❌ Wrong username or password — double-check your Instagram credentials and try again.")
     except Exception as e:
         _current_job["status"] = "error"
         _current_job["finished_at"] = datetime.utcnow().isoformat()

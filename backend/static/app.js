@@ -366,6 +366,10 @@ function updateBulkUI(s) {
     logBox.scrollTop = logBox.scrollHeight;
   }
 
+  const stopAction = document.getElementById('bulk-stop-action');
+  if (s.status === 'running') stopAction.classList.remove('hidden');
+  else stopAction.classList.add('hidden');
+
   const doneActions = document.getElementById('bulk-done-actions');
   if (s.status === 'done' || s.status === 'error') doneActions.classList.remove('hidden');
   else doneActions.classList.add('hidden');
@@ -404,6 +408,18 @@ async function submit2fa() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Verify';
+  }
+}
+
+async function stopBulkImport() {
+  const btn = document.querySelector('#bulk-stop-action .btn-danger');
+  btn.disabled = true;
+  btn.textContent = 'Stopping…';
+  try {
+    await api('/api/instagram/bulk-import/cancel', { method: 'POST' });
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '⏹ Stop Import';
   }
 }
 

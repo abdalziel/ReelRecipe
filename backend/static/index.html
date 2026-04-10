@@ -172,6 +172,9 @@
 
           <div class="log-label">Live Log</div>
           <div id="bulk-log" class="log-box"></div>
+          <div id="bulk-stop-action" class="done-actions hidden">
+            <button class="btn btn-danger" onclick="stopBulkImport()">⏹ Stop Import</button>
+          </div>
           <div id="bulk-done-actions" class="done-actions hidden">
             <button class="btn btn-success" onclick="goToLibrary()">View Imported Recipes</button>
             <button class="btn btn-ghost" onclick="resetBulkImport()">Run Again</button>

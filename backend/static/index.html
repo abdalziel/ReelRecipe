@@ -79,16 +79,16 @@
   ═══════════════════════════════════════════════════════════ -->
   <section id="tab-import" class="tab-section">
     <div class="section-header">
-      <h1 class="section-title">Import Reels</h1>
+      <h1 class="section-title">Import Recipes</h1>
     </div>
 
     <div class="two-col">
 
-      <!-- Single reel -->
+      <!-- Single Instagram reel -->
       <div class="card">
         <div class="card-header">
           <span class="card-icon">🔗</span>
-          <h2 class="card-title">Single Reel</h2>
+          <h2 class="card-title">Instagram Reel</h2>
         </div>
         <p class="card-desc">Paste any Instagram cooking reel URL to extract the recipe.</p>
 
@@ -108,6 +108,64 @@
         </button>
 
         <div id="single-import-status" class="import-status hidden"></div>
+      </div>
+
+      <!-- Web recipe URL -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">🌐</span>
+          <h2 class="card-title">Web Recipe</h2>
+        </div>
+        <p class="card-desc">Import from AllRecipes, Food Network, NYT Cooking, any food blog, or any page with a recipe.</p>
+
+        <div class="input-group">
+          <label class="input-label">Recipe Page URL</label>
+          <input id="web-url-input" type="url" placeholder="https://www.allrecipes.com/recipe/…" class="text-input" />
+        </div>
+
+        <button id="import-web-btn" class="btn btn-primary btn-full" onclick="importWebRecipe()">
+          <span class="btn-icon">✨</span> Import Recipe
+        </button>
+
+        <div id="web-import-status" class="import-status hidden"></div>
+      </div>
+
+      <!-- Recipe page scanner -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">🔍</span>
+          <h2 class="card-title">Scan Recipe Page</h2>
+        </div>
+        <p class="card-desc">Paste a collection page, search results, or blog archive — we'll find all the recipes and let you pick which ones to import.</p>
+
+        <div class="input-group">
+          <label class="input-label">Page URL</label>
+          <input id="scan-url-input" type="url" placeholder="https://www.seriouseats.com/recipes" class="text-input" />
+        </div>
+
+        <button id="scan-page-btn" class="btn btn-purple btn-full" onclick="scanRecipePage()">
+          <span class="btn-icon">🔍</span> Find Recipes on Page
+        </button>
+
+        <div id="scan-status" class="import-status hidden"></div>
+      </div>
+
+      <!-- Photo import -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">📷</span>
+          <h2 class="card-title">Photo / Scan</h2>
+        </div>
+        <p class="card-desc">Take a photo of a recipe card, cookbook page, or printed recipe and Claude will digitize it.</p>
+
+        <label class="upload-zone" for="photo-file-input" id="photo-drop-zone">
+          <div class="upload-icon">📸</div>
+          <div class="upload-text">Click to choose a photo</div>
+          <div class="upload-hint">JPEG, PNG, or WebP — up to 20 MB</div>
+        </label>
+        <input id="photo-file-input" type="file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="importPhotoRecipe(event)" />
+
+        <div id="photo-import-status" class="import-status hidden"></div>
       </div>
 
       <!-- Bulk import -->
@@ -347,6 +405,30 @@
       <span id="shop-selected-count" style="color:var(--text3);font-size:13px;flex:1">0 selected</span>
       <input id="shop-list-name" type="text" placeholder="List name…" class="text-input" style="width:160px" value="My Shopping List" />
       <button class="btn btn-primary" onclick="generateFromSelectedRecipes()">Generate List</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Page Scanner Picker Modal ─────────────────────────────── -->
+<div id="page-scan-modal" class="modal-overlay hidden" onclick="closePageScanModal(event)">
+  <div class="modal" style="max-width:580px">
+    <button class="modal-close" onclick="closePageScanModal()">✕</button>
+    <div style="padding:20px 24px 0">
+      <h2 style="color:var(--text);margin:0 0 4px">Recipes Found</h2>
+      <p id="page-scan-subtitle" style="color:var(--text3);font-size:13px;margin:0 0 12px"></p>
+      <input id="page-scan-search" type="text" placeholder="Filter…" class="text-input" oninput="filterScanResults(this.value)" style="margin-bottom:12px" />
+    </div>
+    <div id="page-scan-list" style="padding:0 16px;max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div style="padding:16px 24px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px">
+      <span id="page-scan-count" style="color:var(--text3);font-size:13px;flex:1">0 selected</span>
+      <button class="btn btn-ghost" onclick="selectAllScanResults()">Select All</button>
+      <button class="btn btn-primary" onclick="importSelectedScanned()">Import Selected</button>
+    </div>
+    <div id="page-scan-progress" class="hidden" style="padding:0 24px 16px">
+      <div class="progress-bar-wrap" style="margin-bottom:8px">
+        <div id="page-scan-bar" class="progress-bar-fill running" style="width:0%"></div>
+      </div>
+      <div id="page-scan-log" style="color:var(--text3);font-size:13px;max-height:120px;overflow-y:auto"></div>
     </div>
   </div>
 </div>

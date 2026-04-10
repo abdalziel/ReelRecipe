@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from models import Recipe, Ingredient, RecipeIngredient
 from services.recipe_extractor import extract_recipe_from_reel, NoRecipeFoundError
+from services.duplicate_detector import find_duplicate
 from services.video_processor import transcribe_audio
 
 # ── In-memory job tracker ──────────────────────────────────────────────────
@@ -158,7 +159,8 @@ def _is_video_post(post: instaloader.Post) -> bool:
     return post.is_video or post.typename in ("GraphVideo", "XDTGraphVideo")
 
 
-def _already_imported(source_url: str, db: Session) -> bool:
+def _url_already_imported(source_url: str, db: Session) -> bool:
+    """Fast URL-based check used before downloading to avoid redundant work."""
     return db.query(Recipe).filter(Recipe.source_url == source_url).first() is not None
 
 
@@ -298,9 +300,9 @@ async def run_bulk_import(
             source_url = f"https://www.instagram.com/p/{shortcode}/"
             _current_job["current"] = post.title or shortcode
 
-            # Skip already imported
-            if _already_imported(source_url, db):
-                _log(f"😋  Looks like you were so hungry you wanted it twice! {shortcode} is already in your library.")
+            # URL check first (fast — avoids re-downloading the same reel)
+            if _url_already_imported(source_url, db):
+                _log(f"😋  Already in your library (same URL): {shortcode}")
                 _current_job["skipped"] += 1
                 _current_job["processed"] += 1
                 continue
@@ -358,6 +360,16 @@ async def run_bulk_import(
                     )
                 except NoRecipeFoundError:
                     _log(f"🚫  No recipe could be found for this reel \"{title}\". Skipping.")
+                    _current_job["skipped"] += 1
+                    _current_job["processed"] += 1
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    continue
+
+                # Content-based duplicate check (catches same recipe from a different URL)
+                ing_names = [i["name"] for i in recipe_data.get("ingredients", [])]
+                dup = find_duplicate(recipe_data["title"], ing_names, db)
+                if dup:
+                    _log(f"😋  Looks like you were so hungry you wanted it twice! \"{dup.title}\" is already in your library.")
                     _current_job["skipped"] += 1
                     _current_job["processed"] += 1
                     shutil.rmtree(tmp_dir, ignore_errors=True)

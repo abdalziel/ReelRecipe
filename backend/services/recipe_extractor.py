@@ -1,6 +1,10 @@
 """
-Uses Claude to extract structured recipe data from a video transcript + description.
+Uses Claude to extract structured recipe data from multiple source types:
+  - Video transcript + description (Instagram reel)
+  - Web page content (any recipe website)
+  - Image (photo of a recipe card or cookbook page)
 """
+import base64
 import json
 from typing import Optional
 
@@ -101,6 +105,132 @@ async def extract_recipe_from_reel(
     if not data.get("is_recipe", True):
         raise NoRecipeFoundError(title)
 
+    return data
+
+
+_JSON_STRUCTURE = """{
+  "is_recipe": true,
+  "title": "Recipe name",
+  "description": "1-2 sentence description",
+  "servings": 2,
+  "prep_time_minutes": 10,
+  "cook_time_minutes": 20,
+  "cuisine": "Italian",
+  "meal_type": "dinner",
+  "tags": ["quick", "healthy"],
+  "steps": ["Step 1", "Step 2"],
+  "ingredients": [
+    {
+      "raw_text": "2 cups all-purpose flour",
+      "name": "all-purpose flour",
+      "quantity": 2.0,
+      "unit": "cups",
+      "notes": null,
+      "category": "pantry"
+    }
+  ],
+  "macros_per_serving": {
+    "calories": 450,
+    "protein_g": 35,
+    "carbs_g": 40,
+    "fat_g": 12
+  }
+}"""
+
+_RULES = """Rules:
+- meal_type must be one of: breakfast, lunch, dinner, snack
+- ingredient category must be one of: produce, protein, dairy, pantry, frozen, spice, beverage, other
+- Estimate macros based on ingredients if not stated
+- If information is missing, make reasonable culinary assumptions
+- Return ONLY the JSON object, no other text"""
+
+WEB_EXTRACTION_PROMPT = """You are a culinary AI assistant. Extract a complete, structured recipe from this web page content.
+
+Title (from page): {title}
+Ingredients found (may be raw strings): {ingredients}
+Page content / instructions:
+{instructions}
+
+If this is NOT a food recipe, return ONLY: {{"is_recipe": false}}
+
+Otherwise return:
+{json_structure}
+
+{rules}"""
+
+IMAGE_EXTRACTION_PROMPT = """You are a culinary AI assistant. Extract the complete recipe from this image.
+It may be a handwritten recipe card, a cookbook page, a printed recipe, or a screenshot.
+
+If this image does NOT contain a food recipe, return ONLY: {{"is_recipe": false}}
+
+Otherwise return:
+{json_structure}
+
+{rules}"""
+
+
+async def extract_recipe_from_web(
+    title: str,
+    ingredients: list,
+    instructions: str,
+) -> dict:
+    """
+    Extract a structured recipe from web page content.
+    Raises NoRecipeFoundError if the content is not a food recipe.
+    """
+    prompt = WEB_EXTRACTION_PROMPT.format(
+        title=title or "(unknown)",
+        ingredients="\n".join(f"- {i}" for i in ingredients) if ingredients else "(none — use instructions text)",
+        instructions=instructions[:4000],
+        json_structure=_JSON_STRUCTURE,
+        rules=_RULES,
+    )
+    message = await claude.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _parse_response(message.content[0].text, title)
+
+
+async def extract_recipe_from_image(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
+    """
+    Use Claude vision to extract a recipe from a photo of a recipe card or cookbook.
+    Raises NoRecipeFoundError if the image does not contain a food recipe.
+    """
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+    message = await claude.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4096,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": b64},
+                },
+                {
+                    "type": "text",
+                    "text": IMAGE_EXTRACTION_PROMPT.format(
+                        json_structure=_JSON_STRUCTURE,
+                        rules=_RULES,
+                    ),
+                },
+            ],
+        }],
+    )
+    return _parse_response(message.content[0].text, "photo import")
+
+
+def _parse_response(raw: str, title_hint: str) -> dict:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    data = json.loads(raw.strip())
+    if not data.get("is_recipe", True):
+        raise NoRecipeFoundError(title_hint)
     return data
 
 

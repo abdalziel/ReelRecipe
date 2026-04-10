@@ -264,6 +264,180 @@ document.getElementById('reel-url-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') importSingleReel();
 });
 
+// ── WEB RECIPE IMPORT ──────────────────────────────────────────────────────
+
+async function importWebRecipe() {
+  const url = document.getElementById('web-url-input').value.trim();
+  const btn = document.getElementById('import-web-btn');
+  const status = document.getElementById('web-import-status');
+  if (!url) { showStatus(status, 'error', 'Please paste a recipe URL first.'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Fetching & extracting…';
+  showStatus(status, 'loading', '⏳ Fetching page and extracting recipe… this takes 15–30 seconds.');
+
+  try {
+    const recipe = await api('/api/reels/import-web', { method: 'POST', body: JSON.stringify({ url }) });
+    showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
+    document.getElementById('web-url-input').value = '';
+    loadLibrary();
+  } catch (e) {
+    showStatus(status, 'error', `❌ ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">✨</span> Import Recipe';
+  }
+}
+
+document.getElementById('web-url-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') importWebRecipe();
+});
+
+// ── PHOTO IMPORT ───────────────────────────────────────────────────────────
+
+async function importPhotoRecipe(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('photo-import-status');
+  const zone = document.getElementById('photo-drop-zone');
+
+  zone.innerHTML = `<div class="upload-icon"><span class="spinner"></span></div><div class="upload-text">Analyzing recipe…</div>`;
+  showStatus(status, 'loading', '⏳ Sending photo to Claude for recipe extraction…');
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const resp = await fetch('/api/reels/import-photo', { method: 'POST', body: formData });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || resp.statusText);
+    }
+    const recipe = await resp.json();
+    showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
+    loadLibrary();
+  } catch (e) {
+    showStatus(status, 'error', `❌ ${e.message}`);
+  } finally {
+    zone.innerHTML = `<div class="upload-icon">📸</div><div class="upload-text">Click to choose a photo</div><div class="upload-hint">JPEG, PNG, or WebP — up to 20 MB</div>`;
+    event.target.value = '';
+  }
+}
+
+// ── PAGE SCANNER ───────────────────────────────────────────────────────────
+
+let _scannedRecipes = [];
+let _selectedScanIds = new Set();
+
+async function scanRecipePage() {
+  const url = document.getElementById('scan-url-input').value.trim();
+  const btn = document.getElementById('scan-page-btn');
+  const status = document.getElementById('scan-status');
+  if (!url) { showStatus(status, 'error', 'Please paste a page URL first.'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Scanning…';
+  showStatus(status, 'loading', '⏳ Scanning page for recipe links…');
+
+  try {
+    const data = await api('/api/reels/scan-page', { method: 'POST', body: JSON.stringify({ url }) });
+    _scannedRecipes = data.recipes;
+    _selectedScanIds = new Set();
+    showStatus(status, 'success', `Found ${_scannedRecipes.length} recipe link(s).`);
+    openPageScanModal();
+  } catch (e) {
+    showStatus(status, 'error', `❌ ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">🔍</span> Find Recipes on Page';
+  }
+}
+
+function openPageScanModal() {
+  document.getElementById('page-scan-modal').classList.remove('hidden');
+  document.getElementById('page-scan-subtitle').textContent =
+    `${_scannedRecipes.length} recipe${_scannedRecipes.length === 1 ? '' : 's'} found — select which to import`;
+  document.getElementById('page-scan-progress').classList.add('hidden');
+  renderScanList(_scannedRecipes);
+}
+
+function closePageScanModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('page-scan-modal').classList.add('hidden');
+}
+
+function renderScanList(items) {
+  const container = document.getElementById('page-scan-list');
+  container.innerHTML = items.map((r, idx) => {
+    const selected = _selectedScanIds.has(r.url);
+    return `<div class="shop-recipe-row ${selected ? 'selected' : ''}" onclick="toggleScanRecipe(${JSON.stringify(r.url)})">
+      <div class="shop-recipe-check">${selected ? '✓' : ''}</div>
+      <div class="shop-recipe-info">
+        <div class="shop-recipe-title">${escHtml(r.title || r.url)}</div>
+        <div style="color:var(--text3);font-size:11px;margin-top:2px">${escHtml(r.url)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  updateScanCount();
+}
+
+function toggleScanRecipe(url) {
+  _selectedScanIds.has(url) ? _selectedScanIds.delete(url) : _selectedScanIds.add(url);
+  renderScanList(_scannedRecipes.filter(r =>
+    r.title.toLowerCase().includes((document.getElementById('page-scan-search').value || '').toLowerCase())
+  ));
+}
+
+function filterScanResults(q) {
+  const filtered = _scannedRecipes.filter(r =>
+    (r.title + r.url).toLowerCase().includes(q.toLowerCase())
+  );
+  renderScanList(filtered);
+}
+
+function selectAllScanResults() {
+  _scannedRecipes.forEach(r => _selectedScanIds.add(r.url));
+  renderScanList(_scannedRecipes);
+}
+
+function updateScanCount() {
+  document.getElementById('page-scan-count').textContent =
+    _selectedScanIds.size > 0 ? `${_selectedScanIds.size} selected` : '0 selected';
+}
+
+async function importSelectedScanned() {
+  const urls = [..._selectedScanIds];
+  if (!urls.length) return;
+
+  const progress = document.getElementById('page-scan-progress');
+  const bar = document.getElementById('page-scan-bar');
+  const log = document.getElementById('page-scan-log');
+  progress.classList.remove('hidden');
+  log.innerHTML = '';
+
+  let done = 0, succeeded = 0, failed = 0;
+
+  for (const url of urls) {
+    const title = (_scannedRecipes.find(r => r.url === url) || {}).title || url;
+    log.innerHTML += `<div>⏳ Importing: ${escHtml(title)}</div>`;
+    log.scrollTop = log.scrollHeight;
+    try {
+      const recipe = await api('/api/reels/import-web', { method: 'POST', body: JSON.stringify({ url }) });
+      log.innerHTML += `<div style="color:var(--green)">✅ ${escHtml(recipe.title)}</div>`;
+      succeeded++;
+    } catch (e) {
+      log.innerHTML += `<div style="color:var(--red)">❌ ${escHtml(title)}: ${escHtml(e.message)}</div>`;
+      failed++;
+    }
+    done++;
+    bar.style.width = Math.round((done / urls.length) * 100) + '%';
+    log.scrollTop = log.scrollHeight;
+  }
+
+  log.innerHTML += `<div style="margin-top:8px;font-weight:600">${succeeded} imported, ${failed} failed.</div>`;
+  loadLibrary();
+}
+
 // ── BULK IMPORT ────────────────────────────────────────────────────────────
 
 function togglePassword() {

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+
+# Database
+backend/recipereel.db
+
+# Uploads (user content)
+backend/uploads/
+
+# macOS
+.DS_Store
+
+# Node / Expo
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+
+# Credentials
+*.pem
+*.key

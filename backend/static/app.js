@@ -1,0 +1,902 @@
+'use strict';
+
+const API = '';  // same origin
+
+// ── State ──────────────────────────────────────────────────────────────────
+let allRecipes   = [];
+let mealPlan     = null;
+let shoppingLists = [];
+let activeDiet   = null;
+let activeListId = null;
+let pollInterval = null;
+
+// Picker state (for adding meals to plan)
+let pickerTarget = null;   // { dayIndex, slot }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Request failed');
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+function thumbUrl(path) {
+  if (!path) return null;
+  const m = path.replace(/\\/g, '/').match(/uploads\/.+/);
+  if (m) return '/' + m[0];
+  if (path.startsWith('http')) return path;
+  return null;
+}
+
+function macroLine(m) {
+  const parts = [];
+  if (m?.calories != null) parts.push(`${Math.round(m.calories)} cal`);
+  if (m?.protein_g != null) parts.push(`${Math.round(m.protein_g)}g P`);
+  return parts.join(' · ');
+}
+
+function formatMealType(t) {
+  if (!t) return '';
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+// ── Tab Navigation ─────────────────────────────────────────────────────────
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'library')  loadLibrary();
+    if (tab === 'planner')  loadPlanner();
+    if (tab === 'shopping') { loadShoppingLists(); loadDietPlan(); }
+    if (tab === 'diet')     loadDietPlan();
+    if (tab === 'import')   checkBulkStatus();
+  });
+});
+
+// ── LIBRARY ────────────────────────────────────────────────────────────────
+
+async function loadLibrary(search = '', mealType = '') {
+  const grid = document.getElementById('recipe-grid');
+  grid.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading recipes…</div>';
+  try {
+    const params = new URLSearchParams();
+    if (search)   params.set('search', search);
+    if (mealType) params.set('meal_type', mealType);
+    const q = params.size ? '?' + params : '';
+    allRecipes = await api('/api/recipes' + q);
+    renderGrid(sortedRecipes(allRecipes));
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Failed to load</div><div class="empty-sub">${e.message}</div></div>`;
+  }
+}
+
+function renderGrid(recipes) {
+  const grid = document.getElementById('recipe-grid');
+  document.getElementById('recipe-count').textContent = `${recipes.length} recipe${recipes.length !== 1 ? 's' : ''}`;
+  if (!recipes.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🍳</div><div class="empty-title">No recipes yet</div><div class="empty-sub">Import a cooking reel to get started.</div></div>`;
+    return;
+  }
+  grid.innerHTML = recipes.map(r => {
+    const thumb = thumbUrl(r.thumbnail_url);
+    const thumbHtml = thumb
+      ? `<img src="${thumb}" class="recipe-thumb" alt="${r.title}" loading="lazy" onerror="this.parentNode.innerHTML='<div class=\'recipe-thumb-placeholder\'>🍽️</div>'">`
+      : `<div class="recipe-thumb-placeholder">🍽️</div>`;
+    const badge = r.meal_type ? `<span class="meal-badge ${r.meal_type}">${formatMealType(r.meal_type)}</span>` : '';
+    const macros = macroLine(r.macros_per_serving);
+    return `
+      <div class="recipe-card" onclick="openRecipe(${r.id})">
+        ${thumbHtml}
+        <div class="recipe-card-body">
+          <div class="recipe-card-title">${escHtml(r.title)}</div>
+          <div class="recipe-card-meta">${badge}${r.cuisine ? `<span style="color:var(--text3);font-size:12px">${escHtml(r.cuisine)}</span>` : ''}</div>
+          ${macros ? `<div class="recipe-macros">${macros}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function sortedRecipes(recipes) {
+  const sort = document.getElementById('sort-select')?.value || 'newest';
+  const arr = [...recipes];
+  if (sort === 'newest') arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  else if (sort === 'oldest') arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  else if (sort === 'alpha') arr.sort((a, b) => a.title.localeCompare(b.title));
+  else if (sort === 'protein') arr.sort((a, b) => (b.macros_per_serving?.protein_g ?? -1) - (a.macros_per_serving?.protein_g ?? -1));
+  return arr;
+}
+
+function applySortAndRender() {
+  renderGrid(sortedRecipes(allRecipes));
+}
+
+// Search & filter
+let searchTimeout;
+document.getElementById('search-input').addEventListener('input', e => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => loadLibrary(e.target.value, activeChip()), 350);
+});
+
+document.getElementById('meal-type-filters').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  document.querySelectorAll('#meal-type-filters .chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  loadLibrary(document.getElementById('search-input').value, chip.dataset.type);
+});
+
+function activeChip() {
+  return document.querySelector('#meal-type-filters .chip.active')?.dataset.type || '';
+}
+
+// ── RECIPE MODAL ───────────────────────────────────────────────────────────
+
+const CATEGORY_COLORS = {
+  produce: '#16a34a', protein: '#dc2626', dairy: '#2563eb',
+  pantry: '#d97706', frozen: '#7c3aed', spice: '#db2777',
+  beverage: '#0891b2', other: '#475569',
+};
+
+async function openRecipe(id) {
+  const overlay = document.getElementById('recipe-modal');
+  const content = document.getElementById('modal-content');
+  overlay.classList.remove('hidden');
+  content.innerHTML = '<div class="loading-state"><span class="spinner"></span></div>';
+  try {
+    const r = await api(`/api/recipes/${id}`);
+    const thumb = thumbUrl(r.thumbnail_url);
+    const heroHtml = thumb
+      ? `<img src="${thumb}" class="modal-hero" alt="${r.title}">`
+      : `<div class="modal-hero-placeholder">🍽️</div>`;
+    const totalTime = (r.prep_time_minutes || 0) + (r.cook_time_minutes || 0);
+    const pills = [
+      r.meal_type ? `<span class="meta-pill meal-badge ${r.meal_type}">${formatMealType(r.meal_type)}</span>` : '',
+      r.cuisine   ? `<span class="meta-pill">🌍 ${escHtml(r.cuisine)}</span>` : '',
+      totalTime   ? `<span class="meta-pill">⏱ ${totalTime} min</span>` : '',
+      r.servings  ? `<span class="meta-pill">🍽 Serves ${r.servings}</span>` : '',
+    ].filter(Boolean).join('');
+
+    const macroHtml = r.macros_per_serving?.calories != null ? `
+      <div style="background:var(--surface);border-radius:12px;padding:16px">
+        <div class="modal-section-title">Per Serving</div>
+        <div class="macro-grid">
+          <div class="macro-tile"><div class="macro-value" style="color:var(--accent)">${Math.round(r.macros_per_serving.calories)}</div><div class="macro-label">Calories</div></div>
+          ${r.macros_per_serving.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:#ef4444">${Math.round(r.macros_per_serving.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
+          ${r.macros_per_serving.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:#eab308">${Math.round(r.macros_per_serving.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
+          ${r.macros_per_serving.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:#3b82f6">${Math.round(r.macros_per_serving.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
+        </div>
+      </div>` : '';
+
+    const ingredients = r.ingredients.map(ing => `
+      <div class="ingredient-row">
+        <div class="ingredient-dot" style="background:${CATEGORY_COLORS[ing.category] || '#475569'}"></div>
+        <div class="ingredient-text">${escHtml(ing.raw_text || ing.name)}</div>
+      </div>`).join('');
+
+    const steps = r.steps.map((s, i) => `
+      <div class="step-row">
+        <div class="step-circle">${i + 1}</div>
+        <div class="step-text">${escHtml(s)}</div>
+      </div>`).join('');
+
+    const tags = r.tags?.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${r.tags.map(t => `<span class="restriction-tag">#${escHtml(t)}</span>`).join('')}</div>` : '';
+
+    content.innerHTML = `
+      ${heroHtml}
+      <div class="modal-body">
+        <div>
+          <div class="modal-title">${escHtml(r.title)}</div>
+          ${r.description ? `<div class="modal-desc" style="margin-top:6px">${escHtml(r.description)}</div>` : ''}
+        </div>
+        <div class="modal-meta">${pills}</div>
+        ${macroHtml}
+        <div>
+          <div class="modal-section-title">Ingredients</div>
+          ${ingredients || '<div style="color:var(--text3)">No ingredients extracted</div>'}
+        </div>
+        <div>
+          <div class="modal-section-title">Instructions</div>
+          ${steps || '<div style="color:var(--text3)">No steps extracted</div>'}
+        </div>
+        ${tags}
+        ${r.source_url ? `<a href="${r.source_url}" target="_blank" style="color:var(--accent);font-size:13px">View original reel ↗</a>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="deleteRecipe(${r.id})" style="align-self:flex-start">🗑 Delete Recipe</button>
+      </div>`;
+  } catch (e) {
+    content.innerHTML = `<div class="modal-body"><div style="color:var(--red)">${e.message}</div></div>`;
+  }
+}
+
+function closeModal(e) {
+  if (e.target === e.currentTarget) closeRecipeModal();
+}
+function closeRecipeModal() {
+  document.getElementById('recipe-modal').classList.add('hidden');
+}
+
+async function deleteRecipe(id) {
+  if (!confirm('Delete this recipe permanently?')) return;
+  await api(`/api/recipes/${id}`, { method: 'DELETE' });
+  closeRecipeModal();
+  loadLibrary(document.getElementById('search-input').value, activeChip());
+}
+
+// ── SINGLE REEL IMPORT ─────────────────────────────────────────────────────
+
+async function importSingleReel() {
+  const url = document.getElementById('reel-url-input').value.trim();
+  const btn = document.getElementById('import-reel-btn');
+  const status = document.getElementById('single-import-status');
+  if (!url) { showStatus(status, 'error', 'Please paste a reel URL first.'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Extracting recipe…';
+  showStatus(status, 'loading', '⏳ Downloading reel, transcribing audio, and extracting recipe… this takes 30–60 seconds.');
+
+  try {
+    const recipe = await api('/api/reels/process', { method: 'POST', body: JSON.stringify({ url }) });
+    showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
+    document.getElementById('reel-url-input').value = '';
+    // Refresh library if on library tab
+    loadLibrary();
+  } catch (e) {
+    showStatus(status, 'error', `❌ ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">✨</span> Import & Extract Recipe';
+  }
+}
+
+// Allow Enter key in URL input
+document.getElementById('reel-url-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') importSingleReel();
+});
+
+// ── BULK IMPORT ────────────────────────────────────────────────────────────
+
+function togglePassword() {
+  const inp = document.getElementById('bulk-password');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+async function startBulkImport() {
+  const username      = document.getElementById('bulk-username').value.trim();
+  const password      = document.getElementById('bulk-password').value.trim();
+  const collectionUrl = document.getElementById('bulk-collection-url').value.trim() || null;
+  const limitVal      = document.getElementById('bulk-limit').value.trim();
+  const limit         = limitVal ? parseInt(limitVal) : null;
+
+  if (!username || !password) {
+    alert('Enter your Instagram username and password.'); return;
+  }
+  const scope = collectionUrl
+    ? `the collection at:\n${collectionUrl}`
+    : 'all your saved posts';
+  if (!confirm(`Start bulk import from @${username}?\n\nThis will scan ${scope} and import cooking reels as recipes. It may take several minutes.`)) return;
+
+  const btn = document.getElementById('bulk-import-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Starting…';
+
+  try {
+    await api('/api/instagram/bulk-import', { method: 'POST', body: JSON.stringify({ username, password, collection_url: collectionUrl, limit }) });
+    showBulkProgress();
+    startBulkPoll();
+  } catch (e) {
+    alert('Could not start import: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">☁️</span> Start Bulk Import';
+  }
+}
+
+function showBulkProgress() {
+  document.getElementById('bulk-progress').classList.remove('hidden');
+}
+
+function startBulkPoll() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(async () => {
+    try {
+      const s = await api('/api/instagram/bulk-import/status');
+      updateBulkUI(s);
+      if (s.status !== 'running') {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        document.getElementById('bulk-import-btn').disabled = false;
+        document.getElementById('bulk-import-btn').innerHTML = '<span class="btn-icon">☁️</span> Start Bulk Import';
+      }
+    } catch (_) {}
+  }, 2000);
+}
+
+function updateBulkUI(s) {
+  const pct = s.total > 0 ? Math.round((s.processed / s.total) * 100) : 0;
+  const bar = document.getElementById('bulk-progress-bar');
+  bar.style.width = pct + '%';
+  bar.className = 'progress-bar-fill ' + (s.status === 'running' ? 'running' : s.status === 'done' ? 'done' : '');
+
+  const badge = document.getElementById('bulk-status-badge');
+  badge.textContent = s.status === 'awaiting_2fa' ? '2FA' : s.status.toUpperCase();
+  badge.className   = 'status-badge ' + s.status;
+
+  const label = document.getElementById('bulk-status-label');
+  if (s.status === 'running') label.textContent = `Processing ${s.processed} of ${s.total}…`;
+  else if (s.status === 'awaiting_2fa') label.textContent = 'Waiting for verification code…';
+  else if (s.status === 'done') label.textContent = 'Import complete';
+  else if (s.status === 'error') label.textContent = 'Import failed';
+  else label.textContent = 'Ready';
+
+  // Show/hide 2FA prompt
+  const twofa = document.getElementById('bulk-2fa-prompt');
+  if (s.status === 'awaiting_2fa') {
+    twofa.classList.remove('hidden');
+    document.getElementById('bulk-2fa-input').focus();
+  } else {
+    twofa.classList.add('hidden');
+  }
+
+  if (s.total > 0) {
+    const stats = document.getElementById('bulk-stats');
+    stats.classList.remove('hidden');
+    stats.innerHTML = `
+      <div class="stat-item"><div class="stat-value" style="color:var(--green)">${s.imported}</div><div class="stat-label">Imported</div></div>
+      <div class="stat-item"><div class="stat-value" style="color:var(--text3)">${s.skipped}</div><div class="stat-label">Skipped</div></div>
+      <div class="stat-item"><div class="stat-value" style="color:var(--red)">${s.failed}</div><div class="stat-label">Failed</div></div>
+      <div class="stat-item"><div class="stat-value" style="color:var(--accent)">${s.total}</div><div class="stat-label">Total</div></div>`;
+  }
+
+  if (s.current) document.getElementById('bulk-current').textContent = 'Processing: ' + s.current;
+  else document.getElementById('bulk-current').textContent = '';
+
+  const logBox = document.getElementById('bulk-log');
+  if (s.log?.length) {
+    logBox.innerHTML = s.log.map(l => `<div class="log-line">${escHtml(l)}</div>`).join('');
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  const doneActions = document.getElementById('bulk-done-actions');
+  if (s.status === 'done' || s.status === 'error') doneActions.classList.remove('hidden');
+  else doneActions.classList.add('hidden');
+}
+
+async function checkBulkStatus() {
+  try {
+    const s = await api('/api/instagram/bulk-import/status');
+    if (s.status !== 'idle') {
+      showBulkProgress();
+      updateBulkUI(s);
+      if (s.status === 'running' || s.status === 'awaiting_2fa') startBulkPoll();
+    }
+  } catch (_) {}
+}
+
+async function submit2fa() {
+  const code = document.getElementById('bulk-2fa-input').value.trim();
+  const errEl = document.getElementById('bulk-2fa-error');
+  errEl.classList.add('hidden');
+  if (code.length !== 6 || !/^\d+$/.test(code)) {
+    errEl.textContent = 'Enter a 6-digit numeric code.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    await api('/api/instagram/bulk-import/2fa', { method: 'POST', body: JSON.stringify({ code }) });
+  } catch (e) {
+    errEl.textContent = 'Invalid code — try again.';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function resetBulkImport() {
+  await api('/api/instagram/bulk-import', { method: 'DELETE' });
+  document.getElementById('bulk-progress').classList.add('hidden');
+  document.getElementById('bulk-import-btn').disabled = false;
+}
+
+function goToLibrary() {
+  document.querySelector('.tab-btn[data-tab="library"]').click();
+}
+
+// ── MEAL PLANNER ───────────────────────────────────────────────────────────
+
+const DAYS  = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const SLOTS = ['breakfast','lunch','dinner','snack'];
+const SLOT_ICONS = { breakfast:'🌅', lunch:'☀️', dinner:'🌙', snack:'🍎' };
+
+async function loadPlanner() {
+  const grid = document.getElementById('planner-grid');
+  grid.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading plan…</div>';
+  try {
+    const plans = await api('/api/meal-plan');
+    if (!plans.length) {
+      const monday = getMonday();
+      mealPlan = await api('/api/meal-plan', { method: 'POST', body: JSON.stringify({ name: 'This Week', week_start: monday }) });
+    } else {
+      mealPlan = plans[0];
+    }
+    renderPlanner();
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">${e.message}</div></div>`;
+  }
+}
+
+function renderPlanner() {
+  const grid = document.getElementById('planner-grid');
+  if (!mealPlan) { grid.innerHTML = ''; return; }
+  grid.innerHTML = DAYS.map((day, di) => {
+    const dayData = mealPlan.calendar[di] || { meals: {} };
+    const slotsHtml = SLOTS.map(slot => {
+      const entries = dayData.meals[slot] || [];
+      const entriesHtml = entries.map(e => `
+        <div class="slot-entry">
+          <span class="slot-entry-title" title="${escHtml(e.recipe.title)}">${escHtml(e.recipe.title)}</span>
+          ${e.recipe.macros_per_serving?.calories ? `<span class="slot-entry-cal">${Math.round(e.recipe.macros_per_serving.calories)}</span>` : ''}
+          <button class="slot-remove" onclick="removeEntry(${mealPlan.id}, ${e.id})" title="Remove">✕</button>
+        </div>`).join('');
+      return `
+        <div class="planner-slot">
+          <div class="slot-label">${SLOT_ICONS[slot]} ${slot}</div>
+          ${entriesHtml}
+          <button class="slot-add" onclick="openPicker(${di}, '${slot}')" title="Add recipe">+</button>
+        </div>`;
+    }).join('');
+    return `
+      <div class="planner-day">
+        <div class="planner-day-header">${day}</div>
+        <div class="planner-slots">${slotsHtml}</div>
+      </div>`;
+  }).join('');
+}
+
+function getMonday() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const mon = new Date(d.setDate(diff));
+  return mon.toISOString().split('T')[0];
+}
+
+async function removeEntry(planId, entryId) {
+  await api(`/api/meal-plan/${planId}/entries/${entryId}`, { method: 'DELETE' });
+  mealPlan = await api(`/api/meal-plan/${planId}`);
+  renderPlanner();
+}
+
+function openPicker(dayIndex, slot) {
+  pickerTarget = { dayIndex, slot };
+  const list = document.getElementById('picker-list');
+  list.innerHTML = allRecipes.length
+    ? allRecipes.map(r => `
+        <div class="picker-item" onclick="pickRecipe(${r.id})">
+          <div class="picker-item-title">${escHtml(r.title)}</div>
+          <div class="picker-item-meta">${formatMealType(r.meal_type) || '—'} · ${macroLine(r.macros_per_serving)}</div>
+        </div>`).join('')
+    : '<div style="color:var(--text3);padding:16px">No recipes in library yet.</div>';
+  document.getElementById('picker-modal').classList.remove('hidden');
+}
+
+async function pickRecipe(recipeId) {
+  closePickerModal();
+  if (!pickerTarget || !mealPlan) return;
+  await api(`/api/meal-plan/${mealPlan.id}/entries`, {
+    method: 'POST',
+    body: JSON.stringify({ recipe_id: recipeId, day_of_week: pickerTarget.dayIndex, meal_slot: pickerTarget.slot, servings: 1 }),
+  });
+  mealPlan = await api(`/api/meal-plan/${mealPlan.id}`);
+  renderPlanner();
+}
+
+function closePickerModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('picker-modal').classList.add('hidden');
+}
+
+async function aiAlignPlan() {
+  if (!mealPlan) { alert('No meal plan loaded.'); return; }
+  let diet;
+  try { diet = await api('/api/diet/active'); } catch (_) {
+    alert('No diet plan set. Go to Diet Goals tab first.'); return;
+  }
+  if (!confirm('Claude will fill your week with recipes that best match your diet goals. Current entries will be replaced.')) return;
+  const btn = document.querySelector('.btn-purple');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Aligning…';
+  try {
+    mealPlan = await api('/api/meal-plan/ai-align', {
+      method: 'POST',
+      body: JSON.stringify({ meal_plan_id: mealPlan.id, diet_plan_id: diet.id }),
+    });
+    renderPlanner();
+  } catch (e) { alert('AI align failed: ' + e.message); }
+  finally { btn.disabled = false; btn.innerHTML = '✨ AI Align to Diet'; }
+}
+
+async function generateShoppingList() {
+  if (!mealPlan) { alert('No meal plan loaded.'); return; }
+  try {
+    const lists = await api('/api/shopping-lists/generate-from-plan', {
+      method: 'POST',
+      body: JSON.stringify({ meal_plan_id: mealPlan.id, name: 'Weekly Shopping', grocery_runs: 1 }),
+    });
+    alert(`✅ Shopping list created with ${lists[0].total_items} items.`);
+    // Switch to shopping tab
+    document.querySelector('.tab-btn[data-tab="shopping"]').click();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+// ── RECIPE PICKER FOR SHOPPING LIST ───────────────────────────────────────
+
+let shopSelectedIds = new Set();
+
+async function openRecipePicker() {
+  shopSelectedIds.clear();
+  const modal = document.getElementById('recipe-shop-modal');
+  modal.classList.remove('hidden');
+  document.getElementById('shop-recipe-search').value = '';
+  const listEl = document.getElementById('shop-recipe-list');
+  listEl.innerHTML = '<div class="loading-state"><span class="spinner"></span></div>';
+
+  try {
+    const recipes = await api('/api/recipes');
+    allRecipes = recipes;
+    renderShopRecipeList(recipes);
+  } catch (e) {
+    listEl.innerHTML = `<div style="color:var(--red);padding:8px">${e.message}</div>`;
+  }
+}
+
+function renderShopRecipeList(recipes) {
+  const listEl = document.getElementById('shop-recipe-list');
+  if (!recipes.length) {
+    listEl.innerHTML = '<div class="empty-state" style="padding:24px">No recipes found.</div>';
+    return;
+  }
+  listEl.innerHTML = recipes.map(r => `
+    <label class="shop-recipe-row ${shopSelectedIds.has(r.id) ? 'selected' : ''}" onclick="toggleShopRecipe(${r.id}, this)">
+      <input type="checkbox" ${shopSelectedIds.has(r.id) ? 'checked' : ''} style="display:none" />
+      <div class="shop-recipe-check">${shopSelectedIds.has(r.id) ? '✓' : ''}</div>
+      <div class="shop-recipe-info">
+        <div class="shop-recipe-title">${escHtml(r.title)}</div>
+        ${r.meal_type ? `<span class="meal-badge ${r.meal_type}" style="font-size:11px">${r.meal_type}</span>` : ''}
+      </div>
+    </label>`).join('');
+  updateShopCount();
+}
+
+function toggleShopRecipe(id, el) {
+  if (shopSelectedIds.has(id)) {
+    shopSelectedIds.delete(id);
+    el.classList.remove('selected');
+    el.querySelector('.shop-recipe-check').textContent = '';
+  } else {
+    shopSelectedIds.add(id);
+    el.classList.add('selected');
+    el.querySelector('.shop-recipe-check').textContent = '✓';
+  }
+  updateShopCount();
+}
+
+function updateShopCount() {
+  const n = shopSelectedIds.size;
+  document.getElementById('shop-selected-count').textContent =
+    n === 0 ? '0 selected' : `${n} recipe${n !== 1 ? 's' : ''} selected`;
+}
+
+function filterShopRecipes(q) {
+  const filtered = allRecipes.filter(r => r.title.toLowerCase().includes(q.toLowerCase()));
+  renderShopRecipeList(filtered);
+}
+
+function closeRecipeShopModal(e) {
+  if (e && e.target !== document.getElementById('recipe-shop-modal')) return;
+  document.getElementById('recipe-shop-modal').classList.add('hidden');
+}
+
+async function generateFromSelectedRecipes() {
+  if (!shopSelectedIds.size) { alert('Select at least one recipe.'); return; }
+  const name = document.getElementById('shop-list-name').value.trim() || 'My Shopping List';
+  try {
+    await api('/api/shopping-lists/generate-from-recipes', {
+      method: 'POST',
+      body: JSON.stringify({ recipe_ids: [...shopSelectedIds], name }),
+    });
+    document.getElementById('recipe-shop-modal').classList.add('hidden');
+    document.querySelector('.tab-btn[data-tab="shopping"]').click();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+// ── SHOPPING ───────────────────────────────────────────────────────────────
+
+const CAT_ICONS  = { produce:'🥦', protein:'🥩', dairy:'🥛', pantry:'🥫', frozen:'🧊', spice:'🌶️', beverage:'🧃', other:'📦' };
+const CAT_COLORS = { produce:'#16a34a', protein:'#dc2626', dairy:'#2563eb', pantry:'#d97706', frozen:'#7c3aed', spice:'#db2777', beverage:'#0891b2', other:'#475569' };
+
+async function loadShoppingLists() {
+  try {
+    shoppingLists = await api('/api/shopping-lists');
+    renderListTabs();
+    if (shoppingLists.length) {
+      await selectList(shoppingLists[0].id);
+    } else {
+      document.getElementById('shopping-list-content').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🛒</div>
+          <div class="empty-title">No shopping lists yet</div>
+          <div class="empty-sub">Build a meal plan and generate a list.</div>
+        </div>`;
+    }
+  } catch (e) { console.error(e); }
+}
+
+function renderListTabs() {
+  const tabs = document.getElementById('shopping-list-tabs');
+  tabs.innerHTML = shoppingLists.map(l => `
+    <button class="list-tab-btn ${l.id === activeListId ? 'active' : ''}" onclick="selectList(${l.id})">
+      ${escHtml(l.name)}
+    </button>`).join('');
+}
+
+async function selectList(id) {
+  activeListId = id;
+  renderListTabs();
+  try {
+    const list = await api(`/api/shopping-lists/${id}`);
+    renderShoppingList(list);
+  } catch (e) { console.error(e); }
+}
+
+function renderShoppingList(list) {
+  const total   = list.total_items;
+  const checked = list.checked_count;
+  const pct     = total > 0 ? Math.round((checked / total) * 100) : 0;
+
+  let html = `
+    <div class="list-progress-bar"><div class="list-progress-fill" style="width:${pct}%"></div></div>
+    <div class="list-progress-text">${checked} of ${total} items checked</div>`;
+
+  const cats = list.items_by_category || {};
+  for (const [cat, items] of Object.entries(cats)) {
+    const icon  = CAT_ICONS[cat]  || '📦';
+    const color = CAT_COLORS[cat] || '#475569';
+    const itemsHtml = items.map(item => `
+      <div class="list-item" onclick="toggleItem(${list.id}, ${item.id}, ${!item.is_checked})">
+        <div class="item-checkbox ${item.is_checked ? 'checked' : ''}">${item.is_checked ? '✓' : ''}</div>
+        <div class="item-text ${item.is_checked ? 'checked' : ''}">${escHtml(item.display_text)}</div>
+      </div>`).join('');
+    html += `
+      <div class="category-block">
+        <div class="category-header">
+          <span class="category-icon">${icon}</span>
+          <span class="category-name" style="color:${color}">${cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
+          <span class="category-count">${items.length}</span>
+        </div>
+        <div class="category-items">${itemsHtml}</div>
+      </div>`;
+  }
+
+  document.getElementById('shopping-list-content').innerHTML = html;
+}
+
+async function toggleItem(listId, itemId, newState) {
+  try {
+    await api(`/api/shopping-lists/${listId}/items/${itemId}/toggle`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_checked: newState }),
+    });
+    await selectList(listId);
+  } catch (e) { console.error(e); }
+}
+
+// ── DIET CHAT (in Shopping sidebar) ───────────────────────────────────────
+
+async function submitDietChat() {
+  const input  = document.getElementById('diet-chat-input');
+  const msgs   = document.getElementById('diet-chat-messages');
+  const status = document.getElementById('diet-chat-status');
+  const text   = input.value.trim();
+  if (!text) return;
+
+  // Show user bubble
+  msgs.innerHTML += `<div class="chat-bubble user">${escHtml(text)}</div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+  input.value = '';
+
+  showStatus(status, 'loading', '⏳ Analyzing your diet goals…');
+
+  try {
+    const plan = await api('/api/diet/from-text', {
+      method: 'POST',
+      body: JSON.stringify({ description: text }),
+    });
+    activeDiet = plan;
+    status.classList.add('hidden');
+    msgs.innerHTML += `
+      <div class="chat-bubble response">
+        ✅ <strong>Diet plan saved!</strong><br>
+        ${plan.daily_targets.calories ? `🔥 ${Math.round(plan.daily_targets.calories)} cal/day` : ''}
+        ${plan.daily_targets.protein_g ? `· 💪 ${Math.round(plan.daily_targets.protein_g)}g protein` : ''}<br>
+        <em>${plan.goals || ''}</em>
+      </div>`;
+    msgs.scrollTop = msgs.scrollHeight;
+    renderDietDisplay(plan);
+  } catch (e) {
+    showStatus(status, 'error', '❌ ' + e.message);
+  }
+}
+
+// Allow Cmd/Ctrl+Enter to submit
+document.getElementById('diet-chat-input').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitDietChat();
+});
+
+async function uploadDietPdf(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const msgs   = document.getElementById('diet-chat-messages');
+  const status = document.getElementById('diet-chat-status');
+  msgs.innerHTML += `<div class="chat-bubble user">📎 Uploading: ${escHtml(file.name)}</div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+  showStatus(status, 'loading', '⏳ Reading PDF and analyzing diet plan…');
+  const form = new FormData();
+  form.append('file', file);
+  form.append('name', file.name.replace('.pdf',''));
+  try {
+    const res = await fetch(API + '/api/diet/from-pdf', { method: 'POST', body: form });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const plan = await res.json();
+    activeDiet = plan;
+    status.classList.add('hidden');
+    msgs.innerHTML += `<div class="chat-bubble response">✅ <strong>Diet plan extracted from PDF!</strong><br>${plan.goals || ''}</div>`;
+    msgs.scrollTop = msgs.scrollHeight;
+    renderDietDisplay(plan);
+  } catch (e) {
+    showStatus(status, 'error', '❌ ' + e.message);
+  }
+  event.target.value = '';
+}
+
+// ── DIET GOALS TAB ─────────────────────────────────────────────────────────
+
+async function loadDietPlan() {
+  try {
+    activeDiet = await api('/api/diet/active');
+    renderDietDisplay(activeDiet);
+  } catch (_) {
+    document.getElementById('diet-plan-display').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🥗</div>
+        <div class="empty-title">No diet plan set</div>
+        <div class="empty-sub">Use the form on the right to configure your goals.</div>
+      </div>`;
+  }
+}
+
+function renderDietDisplay(plan) {
+  const el = document.getElementById('diet-plan-display');
+  if (!plan) return;
+  const mt = plan.meal_targets || {};
+  const mealRows = Object.entries(mt).map(([slot, t]) => `
+    <tr>
+      <td>${formatMealType(slot)}</td>
+      <td>${t.calories != null ? Math.round(t.calories) : '—'}</td>
+      <td>${t.protein_g != null ? Math.round(t.protein_g) + 'g' : '—'}</td>
+      <td>${t.carbs_g != null ? Math.round(t.carbs_g) + 'g' : '—'}</td>
+      <td>${t.fat_g != null ? Math.round(t.fat_g) + 'g' : '—'}</td>
+    </tr>`).join('');
+
+  const restrictions = plan.restrictions?.length
+    ? `<div class="restrictions-row">${plan.restrictions.map(r => `<span class="restriction-tag">${escHtml(r)}</span>`).join('')}</div>` : '';
+
+  el.innerHTML = `
+    <div class="diet-plan-card">
+      <div class="diet-plan-title">${escHtml(plan.name)}</div>
+      ${plan.diet_type ? `<div class="diet-plan-type">${escHtml(plan.diet_type)}</div>` : ''}
+      ${plan.goals ? `<p style="color:var(--text2);font-size:14px;line-height:1.6;margin-bottom:16px">${escHtml(plan.goals)}</p>` : ''}
+      <div class="macro-grid">
+        ${plan.daily_targets.calories != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--accent)">${Math.round(plan.daily_targets.calories)}</div><div class="macro-label">Calories/day</div></div>` : ''}
+        ${plan.daily_targets.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:#ef4444">${Math.round(plan.daily_targets.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
+        ${plan.daily_targets.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:#eab308">${Math.round(plan.daily_targets.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
+        ${plan.daily_targets.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:#3b82f6">${Math.round(plan.daily_targets.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
+      </div>
+      ${mealRows ? `
+        <div class="modal-section-title" style="margin-top:8px">Per-Meal Targets</div>
+        <table class="meal-targets-table">
+          <thead><tr><th>Meal</th><th>Cal</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr></thead>
+          <tbody>${mealRows}</tbody>
+        </table>` : ''}
+      ${restrictions}
+      ${plan.analysis ? `<details style="margin-top:12px"><summary style="cursor:pointer;color:var(--text3);font-size:13px">Full Analysis</summary><p style="color:var(--text2);font-size:13px;line-height:1.6;margin-top:8px">${escHtml(plan.analysis)}</p></details>` : ''}
+      <button class="btn btn-danger btn-sm" style="margin-top:16px" onclick="deleteDietPlan(${plan.id})">🗑 Remove Plan</button>
+    </div>`;
+}
+
+function setDietMode(mode) {
+  document.querySelectorAll('#diet-mode-toggle .mode-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`#diet-mode-toggle .mode-btn[data-mode="${mode}"]`).classList.add('active');
+  document.getElementById('diet-text-mode').classList.toggle('hidden', mode !== 'text');
+  document.getElementById('diet-pdf-mode').classList.toggle('hidden', mode !== 'pdf');
+}
+
+async function analyzeDietText() {
+  const text = document.getElementById('diet-goals-text').value.trim();
+  const name = document.getElementById('diet-plan-name').value.trim() || 'My Diet Plan';
+  const status = document.getElementById('diet-analyze-status');
+  if (!text) { showStatus(status, 'error', 'Please describe your goals first.'); return; }
+
+  const btn = document.querySelector('#diet-text-mode .btn-primary');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Analyzing…';
+  showStatus(status, 'loading', '⏳ Analyzing your diet goals…');
+
+  try {
+    activeDiet = await api('/api/diet/from-text', { method: 'POST', body: JSON.stringify({ description: text, name }) });
+    showStatus(status, 'success', `✅ Diet plan "${activeDiet.name}" saved.`);
+    renderDietDisplay(activeDiet);
+  } catch (e) {
+    showStatus(status, 'error', '❌ ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = '✨ Analyze & Save';
+  }
+}
+
+async function analyzeDietPdf(event) {
+  const file = event.target.files[0];
+  const name = document.getElementById('diet-plan-name').value.trim() || file.name.replace('.pdf','');
+  const status = document.getElementById('diet-analyze-status');
+  if (!file) return;
+  showStatus(status, 'loading', `⏳ Reading "${file.name}"…`);
+  const form = new FormData();
+  form.append('file', file);
+  form.append('name', name);
+  try {
+    const res = await fetch(API + '/api/diet/from-pdf', { method: 'POST', body: form });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    activeDiet = await res.json();
+    showStatus(status, 'success', `✅ Diet plan extracted from PDF.`);
+    renderDietDisplay(activeDiet);
+  } catch (e) {
+    showStatus(status, 'error', '❌ ' + e.message);
+  }
+  event.target.value = '';
+}
+
+async function deleteDietPlan(id) {
+  if (!confirm('Delete this diet plan?')) return;
+  await api(`/api/diet/${id}`, { method: 'DELETE' });
+  activeDiet = null;
+  loadDietPlan();
+}
+
+// ── Utility ────────────────────────────────────────────────────────────────
+
+function showStatus(el, type, msg) {
+  el.className = 'import-status ' + type;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+
+loadLibrary();
+loadDietPlan();
+checkBulkStatus();
+// Pre-load recipes for meal planner picker
+api('/api/recipes').then(r => { allRecipes = r; }).catch(() => {});

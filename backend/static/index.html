@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReelRecipe</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ── Top Nav ────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">🍴</span>
+      <span class="logo-text">ReelRecipe</span>
+    </div>
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="library">
+        <span class="tab-icon">🗂</span> Library
+      </button>
+      <button class="tab-btn" data-tab="import">
+        <span class="tab-icon">⬇️</span> Import
+      </button>
+      <button class="tab-btn" data-tab="planner">
+        <span class="tab-icon">📅</span> Meal Plan
+      </button>
+      <button class="tab-btn" data-tab="shopping">
+        <span class="tab-icon">🛒</span> Shopping
+      </button>
+      <button class="tab-btn" data-tab="diet">
+        <span class="tab-icon">🥗</span> Diet Goals
+      </button>
+    </nav>
+  </div>
+</header>
+
+<!-- ── Main Content ───────────────────────────────────────── -->
+<main class="main">
+
+  <!-- ════════════════════════════════════════════════════════
+       TAB: LIBRARY
+  ═══════════════════════════════════════════════════════════ -->
+  <section id="tab-library" class="tab-section active">
+    <div class="section-header">
+      <h1 class="section-title">Recipe Library</h1>
+      <span id="recipe-count" class="badge"></span>
+    </div>
+
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input id="search-input" type="text" placeholder="Search recipes…" class="search-input" />
+      </div>
+      <div class="toolbar-row2">
+        <div class="filter-chips" id="meal-type-filters">
+          <button class="chip active" data-type="">All</button>
+          <button class="chip" data-type="breakfast">Breakfast</button>
+          <button class="chip" data-type="lunch">Lunch</button>
+          <button class="chip" data-type="dinner">Dinner</button>
+          <button class="chip" data-type="snack">Snack</button>
+        </div>
+        <select id="sort-select" class="sort-select" onchange="applySortAndRender()">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="alpha">A → Z</option>
+          <option value="protein">Highest protein</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="recipe-grid" class="recipe-grid">
+      <div class="loading-state">Loading recipes…</div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════
+       TAB: IMPORT
+  ═══════════════════════════════════════════════════════════ -->
+  <section id="tab-import" class="tab-section">
+    <div class="section-header">
+      <h1 class="section-title">Import Reels</h1>
+    </div>
+
+    <div class="two-col">
+
+      <!-- Single reel -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">🔗</span>
+          <h2 class="card-title">Single Reel</h2>
+        </div>
+        <p class="card-desc">Paste any Instagram cooking reel URL to extract the recipe.</p>
+
+        <div class="how-to">
+          <div class="step"><span class="step-num">1</span><span>Open Instagram → find a cooking reel</span></div>
+          <div class="step"><span class="step-num">2</span><span>Tap Share → Copy Link</span></div>
+          <div class="step"><span class="step-num">3</span><span>Paste the link below and hit Import</span></div>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">Reel URL</label>
+          <input id="reel-url-input" type="url" placeholder="https://www.instagram.com/reel/…" class="text-input" />
+        </div>
+
+        <button id="import-reel-btn" class="btn btn-primary btn-full" onclick="importSingleReel()">
+          <span class="btn-icon">✨</span> Import & Extract Recipe
+        </button>
+
+        <div id="single-import-status" class="import-status hidden"></div>
+      </div>
+
+      <!-- Bulk import -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon" style="color:#e1306c">📷</span>
+          <h2 class="card-title">Bulk Import from Instagram</h2>
+        </div>
+        <p class="card-desc">Sign in to import all your saved cooking reels at once.</p>
+
+        <div class="warning-box">
+          ⚠️ If you have two-factor authentication enabled on Instagram, temporarily disable it before running bulk import.
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">Username</label>
+          <input id="bulk-username" type="text" placeholder="your_username" class="text-input" autocomplete="off" />
+        </div>
+        <div class="input-group">
+          <label class="input-label">Password</label>
+          <div class="password-row">
+            <input id="bulk-password" type="password" placeholder="••••••••" class="text-input" style="flex:1" autocomplete="off" />
+            <button class="eye-btn" onclick="togglePassword()">👁</button>
+          </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Collection URL <span style="font-weight:400;opacity:.65">(optional — leave empty to import all saved)</span></label>
+          <input id="bulk-collection-url" type="url" placeholder="https://www.instagram.com/username/saved/collection-name/" class="text-input" />
+        </div>
+        <div class="input-row">
+          <label class="input-label" style="flex:1">Limit (leave empty = all)</label>
+          <input id="bulk-limit" type="number" placeholder="e.g. 50" class="text-input" style="width:100px" />
+        </div>
+
+        <button id="bulk-import-btn" class="btn btn-instagram btn-full" onclick="startBulkImport()">
+          <span class="btn-icon">☁️</span> Start Bulk Import
+        </button>
+
+        <!-- Bulk progress panel -->
+        <div id="bulk-progress" class="progress-panel hidden">
+          <div class="progress-header">
+            <div id="bulk-status-label" class="progress-status-label"></div>
+            <div id="bulk-status-badge" class="status-badge"></div>
+          </div>
+          <div class="progress-bar-wrap">
+            <div id="bulk-progress-bar" class="progress-bar-fill" style="width:0%"></div>
+          </div>
+          <div id="bulk-stats" class="stats-row hidden"></div>
+          <div id="bulk-current" class="current-item"></div>
+
+          <!-- 2FA prompt — shown only when awaiting_2fa -->
+          <div id="bulk-2fa-prompt" class="twofa-prompt hidden">
+            <div class="twofa-icon">📱</div>
+            <div class="twofa-msg">Open your authenticator app and enter the 6-digit code for Instagram.</div>
+            <div class="twofa-row">
+              <input id="bulk-2fa-input" type="text" inputmode="numeric" maxlength="6"
+                     placeholder="000000" class="text-input twofa-input" />
+              <button class="btn btn-primary" onclick="submit2fa()">Verify</button>
+            </div>
+            <div id="bulk-2fa-error" class="twofa-error hidden"></div>
+          </div>
+
+          <div class="log-label">Live Log</div>
+          <div id="bulk-log" class="log-box"></div>
+          <div id="bulk-done-actions" class="done-actions hidden">
+            <button class="btn btn-success" onclick="goToLibrary()">View Imported Recipes</button>
+            <button class="btn btn-ghost" onclick="resetBulkImport()">Run Again</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════
+       TAB: MEAL PLAN
+  ═══════════════════════════════════════════════════════════ -->
+  <section id="tab-planner" class="tab-section">
+    <div class="section-header">
+      <h1 class="section-title">Meal Planner</h1>
+      <div class="header-actions">
+        <button class="btn btn-purple" onclick="aiAlignPlan()">✨ AI Align to Diet</button>
+        <button class="btn btn-primary" onclick="generateShoppingList()">🛒 Generate Shopping List</button>
+      </div>
+    </div>
+
+    <div id="planner-grid" class="planner-grid">
+      <div class="loading-state">Loading meal plan…</div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════
+       TAB: SHOPPING
+  ═══════════════════════════════════════════════════════════ -->
+  <section id="tab-shopping" class="tab-section">
+    <div class="section-header">
+      <h1 class="section-title">Shopping Lists</h1>
+      <div class="header-actions">
+        <button class="btn btn-ghost" onclick="openRecipePicker()">🍽️ From Recipes</button>
+        <button class="btn btn-primary" onclick="generateShoppingList()">Generate from Meal Plan</button>
+      </div>
+    </div>
+
+    <div class="two-col-65">
+      <!-- Shopping lists -->
+      <div>
+        <div id="shopping-list-tabs" class="list-tabs"></div>
+        <div id="shopping-list-content">
+          <div class="empty-state">
+            <div class="empty-icon">🛒</div>
+            <div class="empty-title">No shopping lists yet</div>
+            <div class="empty-sub">Pick specific recipes or generate from your meal plan.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Diet chat sidebar -->
+      <div class="card diet-sidebar">
+        <div class="card-header">
+          <span class="card-icon">🥗</span>
+          <h2 class="card-title">Diet Assistant</h2>
+        </div>
+        <p class="card-desc">Tell me your goals and I'll set up your diet plan.</p>
+
+        <div id="diet-chat-messages" class="chat-messages">
+          <div class="chat-bubble bot">
+            Hi! Tell me about your diet goals — things like calorie targets, protein goals, food restrictions, or meal timing. I'll analyze it and create your plan.
+          </div>
+        </div>
+
+        <div class="chat-input-area">
+          <textarea id="diet-chat-input" class="chat-textarea" placeholder="e.g. I want to build muscle, eat 2400 calories with 180g protein, 3 meals + 1 snack, no gluten…" rows="3"></textarea>
+          <div class="chat-actions">
+            <label class="btn btn-ghost btn-sm" for="diet-pdf-upload">📎 Upload PDF</label>
+            <input id="diet-pdf-upload" type="file" accept=".pdf" style="display:none" onchange="uploadDietPdf(event)" />
+            <button class="btn btn-primary btn-sm" onclick="submitDietChat()">Send ↵</button>
+          </div>
+        </div>
+        <div id="diet-chat-status" class="chat-status hidden"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════
+       TAB: DIET GOALS
+  ═══════════════════════════════════════════════════════════ -->
+  <section id="tab-diet" class="tab-section">
+    <div class="section-header">
+      <h1 class="section-title">Diet Goals</h1>
+    </div>
+
+    <div class="two-col">
+      <!-- Current plan -->
+      <div id="diet-plan-display">
+        <div class="empty-state">
+          <div class="empty-icon">🥗</div>
+          <div class="empty-title">No diet plan set</div>
+          <div class="empty-sub">Use the form on the right to set up your goals.</div>
+        </div>
+      </div>
+
+      <!-- Set up plan -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">✍️</span>
+          <h2 class="card-title">Set Up Diet Plan</h2>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">Plan Name</label>
+          <input id="diet-plan-name" type="text" value="My Diet Plan" class="text-input" />
+        </div>
+
+        <div class="mode-toggle" id="diet-mode-toggle">
+          <button class="mode-btn active" data-mode="text" onclick="setDietMode('text')">✍️ Type Goals</button>
+          <button class="mode-btn" data-mode="pdf" onclick="setDietMode('pdf')">📄 Upload PDF</button>
+        </div>
+
+        <div id="diet-text-mode">
+          <div class="input-group">
+            <label class="input-label">Describe your diet and goals</label>
+            <textarea id="diet-goals-text" class="text-input textarea-tall"
+              placeholder="e.g. I'm trying to lose fat and build muscle. I need 2200 calories a day with at least 170g protein. I prefer 3 meals and 1 snack. I don't eat dairy or gluten…"></textarea>
+          </div>
+          <button class="btn btn-primary btn-full" onclick="analyzeDietText()">
+            ✨ Analyze & Save
+          </button>
+        </div>
+
+        <div id="diet-pdf-mode" class="hidden">
+          <p class="card-desc">Upload a PDF from MyFitnessPal, a nutritionist, or any diet document.</p>
+          <label class="upload-zone" for="diet-pdf-file">
+            <div class="upload-icon">📄</div>
+            <div class="upload-text">Click to choose a PDF</div>
+            <div class="upload-hint">or drag and drop</div>
+          </label>
+          <input id="diet-pdf-file" type="file" accept=".pdf" style="display:none" onchange="analyzeDietPdf(event)" />
+        </div>
+
+        <div id="diet-analyze-status" class="import-status hidden"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Recipe Detail Modal ────────────────────────────────── -->
+<div id="recipe-modal" class="modal-overlay hidden" onclick="closeModal(event)">
+  <div class="modal" id="recipe-modal-inner">
+    <button class="modal-close" onclick="closeRecipeModal()">✕</button>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<!-- ── Recipe Picker Modal (for meal plan) ───────────────── -->
+<div id="picker-modal" class="modal-overlay hidden" onclick="closePickerModal(event)">
+  <div class="modal" style="max-width:500px">
+    <button class="modal-close" onclick="closePickerModal()">✕</button>
+    <h2 style="color:var(--text);padding:20px 24px 0">Choose a Recipe</h2>
+    <div id="picker-list" style="padding:16px;display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- ── Recipe Picker for Shopping List ───────────────────────── -->
+<div id="recipe-shop-modal" class="modal-overlay hidden" onclick="closeRecipeShopModal(event)">
+  <div class="modal" style="max-width:540px">
+    <button class="modal-close" onclick="closeRecipeShopModal()">✕</button>
+    <div style="padding:20px 24px 0">
+      <h2 style="color:var(--text);margin:0 0 4px">Choose Recipes</h2>
+      <p style="color:var(--text3);font-size:13px;margin:0 0 12px">Select recipes to build a shopping list from.</p>
+      <input id="shop-recipe-search" type="text" placeholder="Search…" class="text-input" oninput="filterShopRecipes(this.value)" style="margin-bottom:12px" />
+    </div>
+    <div id="shop-recipe-list" style="padding:0 16px;max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div style="padding:16px 24px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px">
+      <span id="shop-selected-count" style="color:var(--text3);font-size:13px;flex:1">0 selected</span>
+      <input id="shop-list-name" type="text" placeholder="List name…" class="text-input" style="width:160px" value="My Shopping List" />
+      <button class="btn btn-primary" onclick="generateFromSelectedRecipes()">Generate List</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

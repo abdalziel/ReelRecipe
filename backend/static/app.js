@@ -1129,20 +1129,116 @@ function renderDiscover(recipes) {
       : `<div class="recipe-thumb-placeholder">🍽️</div>`;
     const badge = r.meal_type ? `<span class="meal-badge ${escHtml(r.meal_type)}">${formatMealType(r.meal_type)}</span>` : '';
     const macros = r.calories ? `<div class="recipe-macros">${Math.round(r.calories)} cal${r.protein_g ? ` · ${Math.round(r.protein_g)}g protein` : ''}</div>` : '';
-    return `<div class="public-recipe-card">
+    return `<div class="public-recipe-card" onclick="viewPublicRecipe('${escHtml(r.id)}')" style="cursor:pointer">
       ${thumbHtml}
       <div class="recipe-card-body">
         <div class="recipe-card-title">${escHtml(r.title)}</div>
         <div class="recipe-card-meta">${badge}${r.cuisine ? `<span style="color:var(--text3);font-size:11px">${escHtml(r.cuisine)}</span>` : ''}</div>
         ${macros}
       </div>
-      <div class="public-card-footer">
-        <button class="btn btn-primary btn-sm btn-full" onclick="savePublicRecipe('${escHtml(r.id)}', this)">
+      <div class="public-card-footer" onclick="event.stopPropagation()">
+        <button class="btn btn-primary btn-sm btn-full" data-pub-id="${escHtml(r.id)}" onclick="savePublicRecipe('${escHtml(r.id)}', this)">
           + Save to My Library
         </button>
       </div>
     </div>`;
   }).join('');
+}
+
+function viewPublicRecipe(pubId) {
+  const r = _discoverAll.find(x => x.id === pubId);
+  if (!r) return;
+  const overlay = document.getElementById('recipe-modal');
+  const content = document.getElementById('modal-content');
+  overlay.classList.remove('hidden');
+
+  const thumb = thumbUrl(r.thumbnail_url);
+  const heroHtml = thumb
+    ? `<img src="${thumb}" class="modal-hero" alt="${escHtml(r.title)}">`
+    : `<div class="modal-hero-placeholder">🍽️</div>`;
+  const totalTime = (r.prep_time_minutes || 0) + (r.cook_time_minutes || 0);
+  const pills = [
+    r.meal_type ? `<span class="meta-pill meal-badge ${r.meal_type}">${formatMealType(r.meal_type)}</span>` : '',
+    r.cuisine   ? `<span class="meta-pill">🌍 ${escHtml(r.cuisine)}</span>` : '',
+    totalTime   ? `<span class="meta-pill">⏱ ${totalTime} min</span>` : '',
+    r.servings  ? `<span class="meta-pill">🍽 Serves ${r.servings}</span>` : '',
+  ].filter(Boolean).join('');
+
+  const macroHtml = r.calories != null ? `
+    <div style="background:var(--surface);border-radius:12px;padding:16px">
+      <div class="modal-section-title">Per Serving</div>
+      <div class="macro-grid">
+        <div class="macro-tile"><div class="macro-value" style="color:var(--accent)">${Math.round(r.calories)}</div><div class="macro-label">Calories</div></div>
+        ${r.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:#ef4444">${Math.round(r.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
+        ${r.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:#eab308">${Math.round(r.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
+        ${r.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:#3b82f6">${Math.round(r.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
+      </div>
+    </div>` : '';
+
+  const ingredients = (r.ingredients || []).map(ing => `
+    <div class="ingredient-row">
+      <div class="ingredient-dot" style="background:${CATEGORY_COLORS[ing.category] || '#475569'}"></div>
+      <div class="ingredient-text">${escHtml(ing.raw_text || ing.name)}</div>
+    </div>`).join('');
+
+  const steps = (r.steps || []).map((s, i) => `
+    <div class="step-row">
+      <div class="step-circle">${i + 1}</div>
+      <div class="step-text">${escHtml(s)}</div>
+    </div>`).join('');
+
+  const tags = r.tags?.length
+    ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${r.tags.map(t => `<span class="restriction-tag">#${escHtml(t)}</span>`).join('')}</div>`
+    : '';
+
+  content.innerHTML = `
+    ${heroHtml}
+    <div class="modal-body">
+      <div>
+        <div class="modal-title">${escHtml(r.title)}</div>
+        ${r.description ? `<div class="modal-desc" style="margin-top:6px">${escHtml(r.description)}</div>` : ''}
+      </div>
+      <div class="modal-meta">${pills}</div>
+      ${macroHtml}
+      <div>
+        <div class="modal-section-title">Ingredients</div>
+        ${ingredients || '<div style="color:var(--text3)">No ingredients listed</div>'}
+      </div>
+      <div>
+        <div class="modal-section-title">Instructions</div>
+        ${steps || '<div style="color:var(--text3)">No steps listed</div>'}
+      </div>
+      ${tags}
+      <button id="pub-modal-save-${escHtml(pubId)}" class="btn btn-primary" style="align-self:flex-start"
+        onclick="savePublicRecipeFromModal('${escHtml(pubId)}', this)">
+        + Save to My Library
+      </button>
+    </div>`;
+}
+
+async function savePublicRecipeFromModal(pubId, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    await api(`/api/public/recipes/${pubId}/save`, { method: 'POST' });
+    btn.textContent = '✓ Saved!';
+    btn.style.background = 'var(--green)';
+    loadLibrary();
+    // Mirror the state on the grid card
+    const gridBtn = document.querySelector(`.public-recipe-card [data-pub-id="${pubId}"]`);
+    if (gridBtn) { gridBtn.textContent = '✓ Saved'; gridBtn.disabled = true; gridBtn.style.background = 'var(--green)'; }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '+ Save to My Library';
+    let errEl = btn.nextElementSibling;
+    if (!errEl || !errEl.classList.contains('pub-modal-err')) {
+      errEl = document.createElement('div');
+      errEl.className = 'pub-modal-err';
+      errEl.style.cssText = 'font-size:12px;color:var(--red);margin-top:6px';
+      btn.after(errEl);
+    }
+    errEl.textContent = e.message;
+  }
 }
 
 function filterDiscover() {

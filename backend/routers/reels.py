@@ -90,28 +90,31 @@ def _persist_recipe(recipe_data: dict, source_url: str, source_type: str,
     return recipe
 
 
-def _auto_publish(recipe: Recipe):
-    """Fire-and-forget publish to the public library. Never blocks or raises."""
+def _auto_publish(recipe_data: dict, thumbnail_url: str | None = None):
+    """
+    Fire-and-forget publish to the public library.
+    Accepts the raw Claude-extracted dict so it can be called before
+    the personal duplicate check — meaning it always runs even when
+    the recipe is already in the user's personal library.
+    Never blocks or raises.
+    """
+    macros = recipe_data.get("macros_per_serving") or {}
     asyncio.create_task(publish_to_public({
-        "title": recipe.title,
-        "description": recipe.description,
-        "cuisine": recipe.cuisine,
-        "meal_type": recipe.meal_type,
-        "tags": recipe.tags or [],
-        "thumbnail_url": recipe.thumbnail_url,
-        "servings": recipe.servings,
-        "prep_time_minutes": recipe.prep_time_minutes,
-        "cook_time_minutes": recipe.cook_time_minutes,
-        "calories": recipe.calories,
-        "protein_g": recipe.protein_g,
-        "carbs_g": recipe.carbs_g,
-        "fat_g": recipe.fat_g,
-        "ingredients": [
-            {"name": ri.ingredient.name, "quantity": ri.quantity,
-             "unit": ri.unit, "category": ri.ingredient.category}
-            for ri in recipe.recipe_ingredients
-        ],
-        "steps": recipe.steps or [],
+        "title": recipe_data.get("title"),
+        "description": recipe_data.get("description"),
+        "cuisine": recipe_data.get("cuisine"),
+        "meal_type": recipe_data.get("meal_type"),
+        "tags": recipe_data.get("tags", []),
+        "thumbnail_url": thumbnail_url,
+        "servings": recipe_data.get("servings"),
+        "prep_time_minutes": recipe_data.get("prep_time_minutes"),
+        "cook_time_minutes": recipe_data.get("cook_time_minutes"),
+        "calories": macros.get("calories"),
+        "protein_g": macros.get("protein_g"),
+        "carbs_g": macros.get("carbs_g"),
+        "fat_g": macros.get("fat_g"),
+        "ingredients": recipe_data.get("ingredients", []),
+        "steps": recipe_data.get("steps", []),
     }))
 
 
@@ -147,20 +150,23 @@ async def process_reel(submission: ReelSubmission, db: Session = Depends(get_db)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Failed to extract recipe: {str(e)}")
 
+    raw_thumb = video_data.get("thumbnail_path")
+    thumb_url = f"/uploads/thumbnails/{os.path.basename(raw_thumb)}" if raw_thumb else None
+
+    # Publish to public library before personal duplicate check so even
+    # recipes already in the user's library reach the public library.
+    _auto_publish(recipe_data, thumb_url)
+
     # Content-based duplicate check (catches same recipe from different URLs)
     ingredient_names = [i["name"] for i in recipe_data.get("ingredients", [])]
     dup = find_duplicate(recipe_data["title"], ingredient_names, db)
     if dup:
         raise _duplicate_error(dup)
 
-    raw_thumb = video_data.get("thumbnail_path")
-    thumb_url = f"/uploads/thumbnails/{os.path.basename(raw_thumb)}" if raw_thumb else None
-
     recipe = _persist_recipe(
         recipe_data, submission.url, "instagram_reel",
         thumb_url, video_data.get("transcript"), db
     )
-    _auto_publish(recipe)
     return _serialize_recipe(recipe)
 
 
@@ -191,6 +197,8 @@ async def import_web_recipe(payload: WebRecipeRequest, db: Session = Depends(get
         )
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Failed to extract recipe: {str(e)}")
+
+    _auto_publish(recipe_data, content.get("image"))
 
     ingredient_names = [i["name"] for i in recipe_data.get("ingredients", [])]
     dup = find_duplicate(recipe_data["title"], ingredient_names, db)
@@ -257,6 +265,8 @@ async def import_photo_recipe(
         )
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Failed to extract recipe: {str(e)}")
+
+    _auto_publish(recipe_data)
 
     ingredient_names = [i["name"] for i in recipe_data.get("ingredients", [])]
     dup = find_duplicate(recipe_data["title"], ingredient_names, db)

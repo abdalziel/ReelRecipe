@@ -311,7 +311,7 @@ function startBulkPoll() {
     try {
       const s = await api('/api/instagram/bulk-import/status');
       updateBulkUI(s);
-      if (s.status !== 'running') {
+      if (s.status !== 'running' && s.status !== 'awaiting_2fa') {
         clearInterval(pollInterval);
         pollInterval = null;
         document.getElementById('bulk-import-btn').disabled = false;
@@ -385,17 +385,25 @@ async function checkBulkStatus() {
 async function submit2fa() {
   const code = document.getElementById('bulk-2fa-input').value.trim();
   const errEl = document.getElementById('bulk-2fa-error');
+  const btn = document.querySelector('#bulk-2fa-prompt .btn-primary');
   errEl.classList.add('hidden');
   if (code.length !== 6 || !/^\d+$/.test(code)) {
     errEl.textContent = 'Enter a 6-digit numeric code.';
     errEl.classList.remove('hidden');
     return;
   }
+  btn.disabled = true;
+  btn.textContent = 'Verifying…';
   try {
     await api('/api/instagram/bulk-import/2fa', { method: 'POST', body: JSON.stringify({ code }) });
+    // Resume polling so the UI picks up the result
+    startBulkPoll();
   } catch (e) {
-    errEl.textContent = 'Invalid code — try again.';
+    errEl.textContent = 'Could not submit code — try again.';
     errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Verify';
   }
 }
 

@@ -1,13 +1,44 @@
 """
 Aggregates ingredients from a set of recipes into a deduplicated, categorized shopping list.
 Handles unit normalization, quantity merging, and purchasable display formatting.
+Claude is used as a post-processing step to convert cooking quantities into
+real store-purchase recommendations (e.g. "3 cups cottage cheese" → "2 tubs (16 oz)").
 """
+import json
 from collections import defaultdict
 from typing import List, Optional
 
+from anthropic import AsyncAnthropic
 from sqlalchemy.orm import Session
 
+from config import settings
 from models import Recipe, ShoppingList, ShoppingListItem, Ingredient
+
+_claude = AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+_STORE_UNIT_PROMPT = """\
+You are a grocery shopping assistant. Below is a list of ingredients with their \
+aggregated cooking quantities (summed across multiple recipes). Convert each one \
+to what a shopper should actually put in their cart at a grocery store.
+
+Rules:
+- NEVER suggest fractional packages (no "0.5 cans", "half a pumpkin", "0.3 bags")
+- Always round UP to the nearest whole purchasable unit
+- For spices, seasonings, oils, and condiments: just the ingredient name, no quantity
+- For produce sold by the piece: use count ("3 lemons", "1 pumpkin", "2 heads garlic")
+- For dairy: use standard container sizes (e.g. "1 tub (16 oz) cottage cheese", \
+"1 block (8 oz) cream cheese", "2 sticks butter", "1 qt milk")
+- For proteins: use weight or count as sold ("1.5 lbs chicken breast", "1 dozen eggs")
+- For canned/packaged goods: use can or bag count ("2 cans (15 oz) chickpeas")
+- For fresh herbs sold in bunches: "1 bunch parsley"
+- If a quantity is tiny (< 2 tbsp of a pantry staple): just the name, no quantity
+
+Ingredients (name → quantity + unit):
+{ingredients}
+
+Return ONLY a JSON array. Each element: {{"name": "<ingredient name>", "store_text": "<what to buy>"}}
+No explanation, no markdown, just the JSON array.
+"""
 
 
 CATEGORY_ORDER = ["produce", "protein", "dairy", "pantry", "frozen", "spice", "beverage", "other"]
@@ -119,7 +150,46 @@ def merge_ingredients(recipe_ids: List[int], servings_map: dict, db: Session) ->
     return result
 
 
-def create_shopping_list_from_recipes(
+async def _apply_store_units(merged: dict) -> dict:
+    """
+    Call Claude to replace display_text with store-purchase recommendations.
+    Falls back silently to the original display_text if the call fails.
+    """
+    lines = []
+    for name, data in merged.items():
+        qty = data["quantity"]
+        unit = data["unit"] or ""
+        if qty and qty > 0:
+            lines.append(f"{name}: {qty:.2g} {unit}".strip())
+        else:
+            lines.append(name)
+
+    try:
+        resp = await _claude.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": _STORE_UNIT_PROMPT.format(ingredients="\n".join(lines)),
+            }],
+        )
+        raw = resp.content[0].text.strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        items = json.loads(raw)
+        store_map = {item["name"].lower().strip(): item["store_text"] for item in items}
+        for name in merged:
+            text = store_map.get(name.lower().strip())
+            if text:
+                merged[name]["display_text"] = text
+    except Exception:
+        pass  # Keep original display_text on any failure
+
+    return merged
+
+
+async def create_shopping_list_from_recipes(
     recipe_ids: List[int],
     servings_map: dict,
     meal_plan_id: Optional[int],
@@ -129,6 +199,7 @@ def create_shopping_list_from_recipes(
 ) -> ShoppingList:
     """Build and persist a ShoppingList from the merged ingredient set."""
     merged = merge_ingredients(recipe_ids, servings_map, db)
+    merged = await _apply_store_units(merged)
 
     shopping_list = ShoppingList(
         meal_plan_id=meal_plan_id,

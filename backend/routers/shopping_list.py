@@ -44,7 +44,7 @@ def get_shopping_list(list_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/generate-from-plan")
-def generate_from_plan(
+async def generate_from_plan(
     payload: GenerateFromPlanRequest, db: Session = Depends(get_db)
 ):
     """Generate shopping list(s) from a meal plan, optionally split into N grocery runs."""
@@ -65,7 +65,7 @@ def generate_from_plan(
         )
 
     if payload.grocery_runs == 1:
-        lst = create_shopping_list_from_recipes(
+        lst = await create_shopping_list_from_recipes(
             recipe_ids=recipe_ids,
             servings_map=servings_map,
             meal_plan_id=payload.meal_plan_id,
@@ -80,7 +80,7 @@ def generate_from_plan(
         results = []
         for run_idx, ids_chunk in enumerate([recipe_ids[:half], recipe_ids[half:]], 1):
             chunk_servings = {rid: servings_map[rid] for rid in ids_chunk if rid in servings_map}
-            lst = create_shopping_list_from_recipes(
+            lst = await create_shopping_list_from_recipes(
                 recipe_ids=ids_chunk,
                 servings_map=chunk_servings,
                 meal_plan_id=payload.meal_plan_id,
@@ -93,12 +93,12 @@ def generate_from_plan(
 
 
 @router.post("/generate-from-recipes")
-def generate_from_recipes(
+async def generate_from_recipes(
     payload: GenerateFromRecipesRequest, db: Session = Depends(get_db)
 ):
     """Generate a shopping list from an arbitrary set of recipe IDs."""
     servings_map = payload.servings_map or {rid: 1 for rid in payload.recipe_ids}
-    lst = create_shopping_list_from_recipes(
+    lst = await create_shopping_list_from_recipes(
         recipe_ids=payload.recipe_ids,
         servings_map={int(k): v for k, v in servings_map.items()},
         meal_plan_id=None,

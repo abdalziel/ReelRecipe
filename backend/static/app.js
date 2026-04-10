@@ -1437,15 +1437,9 @@ function viewPublicRecipe(pubId) {
     ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${r.tags.map(t => `<span class="restriction-tag">#${escHtml(t)}</span>`).join('')}</div>`
     : '';
 
-  // Public hero — no cover-edit for now (creator-only feature, enabled at launch)
   const pubThumb = thumbUrl(r.thumbnail_url);
   const pubHero = pubThumb
-    ? `<div style="position:relative"><img src="${pubThumb}" class="modal-hero" alt="${escHtml(r.title)}">
-        <button disabled title="Cover editing coming soon — creator only" style="
-          position:absolute;bottom:10px;right:10px;
-          background:rgba(0,0,0,.35);color:rgba(255,255,255,.4);border:none;border-radius:99px;
-          padding:6px 12px;font-size:12px;cursor:not-allowed;backdrop-filter:blur(4px);
-        ">📷 Change cover</button></div>`
+    ? `<img src="${pubThumb}" class="modal-hero" alt="${escHtml(r.title)}">`
     : `<div class="modal-hero-placeholder">🍽️</div>`;
 
   content.innerHTML = `

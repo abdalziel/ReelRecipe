@@ -231,6 +231,72 @@ async def create_shopping_list_from_recipes(
     return shopping_list
 
 
+async def add_recipes_to_list(
+    shopping_list: ShoppingList,
+    recipe_ids: List[int],
+    servings_map: dict,
+    db: Session,
+) -> ShoppingList:
+    """
+    Merge new recipes into an existing shopping list.
+    Existing item quantities are combined with the new amounts;
+    truly new ingredients are appended. Claude re-evaluates display
+    text for every item that changed so store units stay accurate.
+    """
+    # Build a lookup of existing items keyed by ingredient name
+    existing: dict = {
+        item.ingredient.name.lower().strip(): item
+        for item in shopping_list.items
+    }
+
+    # Aggregate the incoming recipes
+    new_merged = merge_ingredients(recipe_ids, servings_map, db)
+
+    # Combine: add new quantities on top of existing quantities
+    combined: dict = {}
+    for name, item in existing.items():
+        combined[name] = {
+            "quantity": item.quantity or 0,
+            "unit": item.unit or "",
+            "display_text": item.display_text,
+            "category": item.category or "other",
+        }
+    for name, data in new_merged.items():
+        if name in combined:
+            combined[name]["quantity"] = (combined[name]["quantity"] or 0) + (data["quantity"] or 0)
+        else:
+            combined[name] = data
+
+    # Re-run Claude on the full combined set
+    combined = await _apply_store_units(combined)
+
+    # Persist: update existing rows, insert new ones
+    for name, data in combined.items():
+        ingredient = db.query(Ingredient).filter(Ingredient.name == name).first()
+        if not ingredient:
+            ingredient = Ingredient(name=name, category=data["category"])
+            db.add(ingredient)
+            db.flush()
+
+        if name in existing:
+            item = existing[name]
+            item.quantity = data["quantity"]
+            item.display_text = data["display_text"]
+        else:
+            db.add(ShoppingListItem(
+                shopping_list_id=shopping_list.id,
+                ingredient_id=ingredient.id,
+                quantity=data["quantity"],
+                unit=data["unit"],
+                display_text=data["display_text"],
+                category=data["category"],
+            ))
+
+    db.commit()
+    db.refresh(shopping_list)
+    return shopping_list
+
+
 def group_items_by_category(shopping_list: ShoppingList) -> dict:
     """Return items grouped by category, in the standard store aisle order."""
     groups: dict = defaultdict(list)

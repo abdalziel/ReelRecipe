@@ -7,6 +7,7 @@ from database import get_db
 from models import ShoppingList, ShoppingListItem, MealPlan
 from services.shopping_list import (
     create_shopping_list_from_recipes,
+    add_recipes_to_list,
     group_items_by_category,
 )
 
@@ -23,6 +24,11 @@ class GenerateFromRecipesRequest(BaseModel):
     recipe_ids: List[int]
     servings_map: Optional[dict] = None  # {recipe_id: servings}
     name: str = "Shopping List"
+
+
+class AddRecipesRequest(BaseModel):
+    recipe_ids: List[int]
+    servings_map: Optional[dict] = None
 
 
 class ToggleItemRequest(BaseModel):
@@ -104,6 +110,26 @@ async def generate_from_recipes(
         meal_plan_id=None,
         name=payload.name,
         grocery_run=1,
+        db=db,
+    )
+    return _serialize_list(lst, db)
+
+
+@router.post("/{list_id}/add-recipes")
+async def add_recipes(
+    list_id: int,
+    payload: AddRecipesRequest,
+    db: Session = Depends(get_db),
+):
+    """Merge additional recipes into an existing shopping list."""
+    lst = db.query(ShoppingList).filter(ShoppingList.id == list_id).first()
+    if not lst:
+        raise HTTPException(status_code=404, detail="Shopping list not found")
+    servings_map = payload.servings_map or {rid: 1 for rid in payload.recipe_ids}
+    lst = await add_recipes_to_list(
+        shopping_list=lst,
+        recipe_ids=payload.recipe_ids,
+        servings_map={int(k): v for k, v in servings_map.items()},
         db=db,
     )
     return _serialize_list(lst, db)

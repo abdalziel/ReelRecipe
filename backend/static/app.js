@@ -743,7 +743,24 @@ async function generateShoppingList() {
 
 let shopSelectedIds = new Set();
 
+let _shopPickerMode = 'new'; // 'new' | 'add'
+
 async function openRecipePicker() {
+  _shopPickerMode = 'new';
+  document.querySelector('#recipe-shop-modal h2').textContent = 'Choose Recipes';
+  document.getElementById('shop-list-name').closest('div').style.display = '';
+  await _openShopModal();
+}
+
+async function openAddToListPicker() {
+  if (!activeListId) return;
+  _shopPickerMode = 'add';
+  document.querySelector('#recipe-shop-modal h2').textContent = 'Add Recipes to List';
+  document.getElementById('shop-list-name').closest('div').style.display = 'none';
+  await _openShopModal();
+}
+
+async function _openShopModal() {
   shopSelectedIds.clear();
   const modal = document.getElementById('recipe-shop-modal');
   modal.classList.remove('hidden');
@@ -808,14 +825,23 @@ function closeRecipeShopModal(e) {
 
 async function generateFromSelectedRecipes() {
   if (!shopSelectedIds.size) { alert('Select at least one recipe.'); return; }
-  const name = document.getElementById('shop-list-name').value.trim() || 'My Shopping List';
   try {
-    await api('/api/shopping-lists/generate-from-recipes', {
-      method: 'POST',
-      body: JSON.stringify({ recipe_ids: [...shopSelectedIds], name }),
-    });
-    document.getElementById('recipe-shop-modal').classList.add('hidden');
-    document.querySelector('.tab-btn[data-tab="shopping"]').click();
+    if (_shopPickerMode === 'add' && activeListId) {
+      await api(`/api/shopping-lists/${activeListId}/add-recipes`, {
+        method: 'POST',
+        body: JSON.stringify({ recipe_ids: [...shopSelectedIds] }),
+      });
+      document.getElementById('recipe-shop-modal').classList.add('hidden');
+      await selectList(activeListId);
+    } else {
+      const name = document.getElementById('shop-list-name').value.trim() || 'My Shopping List';
+      await api('/api/shopping-lists/generate-from-recipes', {
+        method: 'POST',
+        body: JSON.stringify({ recipe_ids: [...shopSelectedIds], name }),
+      });
+      document.getElementById('recipe-shop-modal').classList.add('hidden');
+      document.querySelector('.tab-btn[data-tab="shopping"]').click();
+    }
   } catch (e) { alert('Failed: ' + e.message); }
 }
 
@@ -851,6 +877,10 @@ function renderListTabs() {
     ? `<button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--red)" onclick="clearShoppingList(${activeListId})">🗑 Clear List</button>`
     : '';
   tabs.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${tabBtns}${clearBtn}</div>`;
+
+  // Show/hide the header-level "Add Recipes" button
+  const addBtn = document.getElementById('btn-add-to-list');
+  if (addBtn) addBtn.classList.toggle('hidden', !activeListId);
 }
 
 async function clearShoppingList(id) {

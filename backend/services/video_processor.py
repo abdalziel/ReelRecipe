@@ -112,23 +112,57 @@ async def transcribe_audio(audio_path: str) -> Optional[str]:
     return await loop.run_in_executor(None, _transcribe)
 
 
+def _extract_mid_frame(video_path: str, duration: float, output_path: str) -> bool:
+    """
+    Extract a single frame at 45% of video duration using ffmpeg.
+    Falls back to 5s if duration unknown. Returns True on success.
+    """
+    import subprocess
+    seek = max(1, (duration or 12) * 0.45)
+    result = subprocess.run(
+        [
+            "ffmpeg", "-ss", str(seek), "-i", video_path,
+            "-vframes", "1", "-q:v", "2", output_path,
+            "-y", "-loglevel", "quiet",
+        ],
+        capture_output=True,
+    )
+    return result.returncode == 0 and os.path.exists(output_path)
+
+
 async def process_reel_url(url: str) -> dict:
     """
     Full pipeline: download reel → extract audio → transcribe.
-    Returns all metadata needed for recipe extraction.
+    Uses a mid-video frame (45% in) as the thumbnail so it usually shows
+    the finished dish rather than an intro/title card.
     """
+    import shutil
     with tempfile.TemporaryDirectory(dir=settings.upload_dir) as tmp_dir:
         os.makedirs(tmp_dir, exist_ok=True)
         video_data = await download_reel(url, tmp_dir)
         transcript = await transcribe_audio(video_data.get("audio_path"))
 
-        # Copy thumbnail to permanent uploads if it exists
+        perm_dir = os.path.join(settings.upload_dir, "thumbnails")
+        os.makedirs(perm_dir, exist_ok=True)
+
         thumbnail_dest = None
-        if video_data.get("thumbnail_path"):
-            perm_dir = os.path.join(settings.upload_dir, "thumbnails")
-            os.makedirs(perm_dir, exist_ok=True)
+        video_path = video_data.get("video_path")
+        duration = video_data.get("duration")
+
+        # Prefer a mid-video frame; fall back to yt-dlp's thumbnail
+        if video_path and os.path.exists(video_path):
+            mid_frame = os.path.join(tmp_dir, f"{video_data['video_id']}_mid.jpg")
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(
+                None, _extract_mid_frame, video_path, duration or 0, mid_frame
+            )
+            if success:
+                dest = os.path.join(perm_dir, Path(mid_frame).name)
+                shutil.copy2(mid_frame, dest)
+                thumbnail_dest = dest
+
+        if not thumbnail_dest and video_data.get("thumbnail_path"):
             dest = os.path.join(perm_dir, Path(video_data["thumbnail_path"]).name)
-            import shutil
             shutil.copy2(video_data["thumbnail_path"], dest)
             thumbnail_dest = dest
 
@@ -138,5 +172,5 @@ async def process_reel_url(url: str) -> dict:
             "transcript": transcript,
             "description": video_data.get("description", ""),
             "thumbnail_path": thumbnail_dest,
-            "duration": video_data.get("duration"),
+            "duration": duration,
         }

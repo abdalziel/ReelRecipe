@@ -163,9 +163,40 @@ async function openRecipe(id) {
   try {
     const r = await api(`/api/recipes/${id}`);
     const thumb = thumbUrl(r.thumbnail_url);
-    const heroHtml = thumb
-      ? `<img src="${thumb}" class="modal-hero" alt="${r.title}">`
-      : `<div class="modal-hero-placeholder">🍽️</div>`;
+    const heroHtml = `<div class="modal-hero-wrap" style="position:relative">
+      ${thumb ? `<img src="${thumb}" class="modal-hero" alt="${escHtml(r.title)}" id="modal-hero-img">` : `<div class="modal-hero-placeholder" id="modal-hero-img">🍽️</div>`}
+      <button onclick="openCoverEditor(${r.id})" title="Change cover photo" style="
+        position:absolute;bottom:10px;right:10px;
+        background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:99px;
+        padding:6px 12px;font-size:12px;cursor:pointer;backdrop-filter:blur(4px);
+        display:flex;align-items:center;gap:5px;
+      ">📷 Change cover</button>
+      <div id="cover-editor-${r.id}" class="hidden" style="
+        position:absolute;inset:0;background:rgba(0,0,0,.75);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+        backdrop-filter:blur(4px);border-radius:inherit;
+      ">
+        <div style="color:#fff;font-weight:600;font-size:14px">Change Cover Photo</div>
+        <label style="
+          background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;
+          cursor:pointer;font-size:13px;font-weight:600;
+        ">📤 Upload Photo<input type="file" accept="image/*" style="display:none" onchange="uploadCoverPhoto(${r.id}, this)"></label>
+        <div style="color:rgba(255,255,255,.5);font-size:12px">— or —</div>
+        <div style="display:flex;gap:8px;width:280px">
+          <input id="cover-url-${r.id}" type="url" placeholder="Paste image URL…" style="
+            flex:1;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);
+            background:rgba(255,255,255,.1);color:#fff;font-size:12px;
+          ">
+          <button onclick="saveCoverUrl(${r.id})" style="
+            background:var(--accent);color:#fff;border:none;border-radius:8px;
+            padding:8px 14px;cursor:pointer;font-size:12px;font-weight:600;
+          ">Save</button>
+        </div>
+        <button onclick="closeCoverEditor(${r.id})" style="
+          color:rgba(255,255,255,.6);background:none;border:none;cursor:pointer;font-size:12px;margin-top:4px;
+        ">Cancel</button>
+      </div>
+    </div>`;
     const totalTime = (r.prep_time_minutes || 0) + (r.cook_time_minutes || 0);
     const pills = [
       r.meal_type ? `<span class="meta-pill meal-badge ${r.meal_type}">${formatMealType(r.meal_type)}</span>` : '',
@@ -222,6 +253,65 @@ async function openRecipe(id) {
       </div>`;
   } catch (e) {
     content.innerHTML = `<div class="modal-body"><div style="color:var(--red)">${e.message}</div></div>`;
+  }
+}
+
+// ── Cover photo editor ─────────────────────────────────────────────────────
+
+function openCoverEditor(recipeId) {
+  document.getElementById(`cover-editor-${recipeId}`).classList.remove('hidden');
+}
+function closeCoverEditor(recipeId) {
+  document.getElementById(`cover-editor-${recipeId}`).classList.add('hidden');
+}
+
+async function uploadCoverPhoto(recipeId, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    const data = await res.json();
+    _refreshModalHero(data.thumbnail_url);
+    closeCoverEditor(recipeId);
+    loadLibrary();
+  } catch (e) { alert('Failed to update cover: ' + e.message); }
+}
+
+async function saveCoverUrl(recipeId) {
+  const url = document.getElementById(`cover-url-${recipeId}`).value.trim();
+  if (!url) return;
+  const fd = new FormData();
+  fd.append('url', url);
+  try {
+    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    const data = await res.json();
+    _refreshModalHero(data.thumbnail_url);
+    closeCoverEditor(recipeId);
+    loadLibrary();
+  } catch (e) { alert('Failed to update cover: ' + e.message); }
+}
+
+function _refreshModalHero(newUrl) {
+  const wrap = document.querySelector('.modal-hero-wrap');
+  if (!wrap) return;
+  const img = wrap.querySelector('#modal-hero-img');
+  if (!img) return;
+  if (newUrl) {
+    const freshUrl = newUrl + '?t=' + Date.now(); // bust cache
+    if (img.tagName === 'IMG') {
+      img.src = freshUrl;
+    } else {
+      // Was a placeholder div — replace with img
+      const newImg = document.createElement('img');
+      newImg.id = 'modal-hero-img';
+      newImg.className = 'modal-hero';
+      newImg.src = freshUrl;
+      img.replaceWith(newImg);
+    }
   }
 }
 
@@ -1347,8 +1437,19 @@ function viewPublicRecipe(pubId) {
     ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${r.tags.map(t => `<span class="restriction-tag">#${escHtml(t)}</span>`).join('')}</div>`
     : '';
 
+  // Public hero — no cover-edit for now (creator-only feature, enabled at launch)
+  const pubThumb = thumbUrl(r.thumbnail_url);
+  const pubHero = pubThumb
+    ? `<div style="position:relative"><img src="${pubThumb}" class="modal-hero" alt="${escHtml(r.title)}">
+        <button disabled title="Cover editing coming soon — creator only" style="
+          position:absolute;bottom:10px;right:10px;
+          background:rgba(0,0,0,.35);color:rgba(255,255,255,.4);border:none;border-radius:99px;
+          padding:6px 12px;font-size:12px;cursor:not-allowed;backdrop-filter:blur(4px);
+        ">📷 Change cover</button></div>`
+    : `<div class="modal-hero-placeholder">🍽️</div>`;
+
   content.innerHTML = `
-    ${heroHtml}
+    ${pubHero}
     <div class="modal-body">
       <div>
         <div class="modal-title">${escHtml(r.title)}</div>

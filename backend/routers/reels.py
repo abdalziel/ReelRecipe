@@ -6,6 +6,7 @@ Recipe import endpoints:
   POST /api/reels/scan-page      — Scan a page for recipe links (returns list for picker)
   POST /api/reels/import-photo   — Upload a photo of a recipe card / cookbook page
 """
+import asyncio
 import os
 from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Form
 from pydantic import BaseModel
@@ -22,6 +23,7 @@ from services.recipe_extractor import (
 )
 from services.web_scraper import get_recipe_content, find_recipes_on_page
 from services.duplicate_detector import find_duplicate
+from services.public_library import publish as publish_to_public
 
 router = APIRouter(prefix="/api/reels", tags=["reels"])
 
@@ -88,6 +90,31 @@ def _persist_recipe(recipe_data: dict, source_url: str, source_type: str,
     return recipe
 
 
+def _auto_publish(recipe: Recipe):
+    """Fire-and-forget publish to the public library. Never blocks or raises."""
+    asyncio.create_task(publish_to_public({
+        "title": recipe.title,
+        "description": recipe.description,
+        "cuisine": recipe.cuisine,
+        "meal_type": recipe.meal_type,
+        "tags": recipe.tags or [],
+        "thumbnail_url": recipe.thumbnail_url,
+        "servings": recipe.servings,
+        "prep_time_minutes": recipe.prep_time_minutes,
+        "cook_time_minutes": recipe.cook_time_minutes,
+        "calories": recipe.calories,
+        "protein_g": recipe.protein_g,
+        "carbs_g": recipe.carbs_g,
+        "fat_g": recipe.fat_g,
+        "ingredients": [
+            {"name": ri.ingredient.name, "quantity": ri.quantity,
+             "unit": ri.unit, "category": ri.ingredient.category}
+            for ri in recipe.recipe_ingredients
+        ],
+        "steps": recipe.steps or [],
+    }))
+
+
 # ── 1. Instagram reel ──────────────────────────────────────────────────────
 
 class ReelSubmission(BaseModel):
@@ -133,6 +160,7 @@ async def process_reel(submission: ReelSubmission, db: Session = Depends(get_db)
         recipe_data, submission.url, "instagram_reel",
         thumb_url, video_data.get("transcript"), db
     )
+    _auto_publish(recipe)
     return _serialize_recipe(recipe)
 
 

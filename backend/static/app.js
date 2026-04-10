@@ -50,19 +50,25 @@ function formatMealType(t) {
 
 // ── Tab Navigation ─────────────────────────────────────────────────────────
 
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+  const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+  if (btn) btn.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  // Keep mobile dropdown in sync
+  const mobileNav = document.getElementById('mobile-nav');
+  if (mobileNav) mobileNav.value = tab;
+  if (tab === 'library')  loadLibrary();
+  if (tab === 'planner')  loadPlanner();
+  if (tab === 'shopping') { loadShoppingLists(); loadDietPlan(); }
+  if (tab === 'diet')     loadDietPlan();
+  if (tab === 'import')   checkBulkStatus();
+  if (tab === 'discover') loadDiscover();
+}
+
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-' + tab).classList.add('active');
-    if (tab === 'library')  loadLibrary();
-    if (tab === 'planner')  loadPlanner();
-    if (tab === 'shopping') { loadShoppingLists(); loadDietPlan(); }
-    if (tab === 'diet')     loadDietPlan();
-    if (tab === 'import')   checkBulkStatus();
-  });
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
 // ── LIBRARY ────────────────────────────────────────────────────────────────
@@ -1089,6 +1095,95 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ── DISCOVER (public library) ──────────────────────────────────────────────
+
+let _discoverAll = [];
+let _discoverMealFilter = '';
+
+async function loadDiscover() {
+  const grid = document.getElementById('discover-grid');
+  const count = document.getElementById('discover-count');
+  grid.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading public recipes…</div>';
+  try {
+    const data = await api('/api/public/recipes');
+    _discoverAll = data.recipes || [];
+    count.textContent = `${_discoverAll.length} recipes`;
+    renderDiscover(_discoverAll);
+  } catch (e) {
+    grid.innerHTML = `<div class="loading-state" style="color:var(--red)">Could not load public recipes.</div>`;
+  }
+}
+
+function renderDiscover(recipes) {
+  const grid = document.getElementById('discover-grid');
+  if (!recipes.length) {
+    grid.innerHTML = '<div class="loading-state">No recipes found.</div>';
+    return;
+  }
+  grid.innerHTML = recipes.map(r => {
+    const thumb = thumbUrl(r.thumbnail_url);
+    const thumbHtml = thumb
+      ? `<img class="recipe-thumb" src="${thumb}" alt="${escHtml(r.title)}" loading="lazy" />`
+      : `<div class="recipe-thumb-placeholder">🍽️</div>`;
+    const badge = r.meal_type ? `<span class="meal-badge ${escHtml(r.meal_type)}">${formatMealType(r.meal_type)}</span>` : '';
+    const macros = r.calories ? `<div class="recipe-macros">${Math.round(r.calories)} cal${r.protein_g ? ` · ${Math.round(r.protein_g)}g protein` : ''}</div>` : '';
+    return `<div class="public-recipe-card">
+      ${thumbHtml}
+      <div class="recipe-card-body">
+        <div class="recipe-card-title">${escHtml(r.title)}</div>
+        <div class="recipe-card-meta">${badge}${r.cuisine ? `<span style="color:var(--text3);font-size:11px">${escHtml(r.cuisine)}</span>` : ''}</div>
+        ${macros}
+      </div>
+      <div class="public-card-footer">
+        <button class="btn btn-primary btn-sm btn-full" onclick="savePublicRecipe('${escHtml(r.id)}', this)">
+          + Save to My Library
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterDiscover() {
+  const q = document.getElementById('discover-search').value.toLowerCase();
+  const filtered = _discoverAll.filter(r => {
+    const matchType = !_discoverMealFilter || r.meal_type === _discoverMealFilter;
+    const matchQ = !q || (r.title + ' ' + (r.cuisine || '') + ' ' + (r.tags || []).join(' ')).toLowerCase().includes(q);
+    return matchType && matchQ;
+  });
+  renderDiscover(filtered);
+}
+
+function setDiscoverFilter(el, type) {
+  _discoverMealFilter = type;
+  document.querySelectorAll('#discover-meal-filters .chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  filterDiscover();
+}
+
+async function savePublicRecipe(pubId, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    const result = await api(`/api/public/recipes/${pubId}/save`, { method: 'POST' });
+    btn.textContent = '✓ Saved!';
+    btn.style.background = 'var(--green)';
+    loadLibrary();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '+ Save to My Library';
+    // Show the duplicate message or other error inline
+    const card = btn.closest('.public-recipe-card');
+    let errEl = card.querySelector('.discover-err');
+    if (!errEl) {
+      errEl = document.createElement('div');
+      errEl.className = 'discover-err';
+      errEl.style.cssText = 'font-size:11px;color:var(--red);padding:4px 12px 8px;line-height:1.4';
+      card.appendChild(errEl);
+    }
+    errEl.textContent = e.message;
+  }
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

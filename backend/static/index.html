@@ -31,7 +31,18 @@
       <button class="tab-btn" data-tab="diet">
         <span class="tab-icon">🥗</span> Diet Goals
       </button>
+      <button class="tab-btn" data-tab="discover">
+        <span class="tab-icon">🌍</span> Discover
+      </button>
     </nav>
+    <select class="mobile-nav" id="mobile-nav" onchange="switchTab(this.value)">
+      <option value="library">🗂 Library</option>
+      <option value="import">⬇️ Import</option>
+      <option value="planner">📅 Meal Plan</option>
+      <option value="shopping">🛒 Shopping</option>
+      <option value="diet">🥗 Diet Goals</option>
+      <option value="discover">🌍 Discover</option>
+    </select>
   </div>
 </header>
 
@@ -369,6 +380,34 @@
 
         <div id="diet-analyze-status" class="import-status hidden"></div>
       </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════
+       TAB: DISCOVER
+  ═══════════════════════════════════════════════════════════ -->
+  <section id="tab-discover" class="tab-section">
+    <div class="section-header">
+      <h1 class="section-title">Discover Recipes</h1>
+      <span id="discover-count" class="badge"></span>
+    </div>
+
+    <div class="discover-search-row">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input id="discover-search" type="text" placeholder="Search public recipes…" class="search-input" oninput="filterDiscover()" />
+      </div>
+    </div>
+    <div class="discover-filter-row" id="discover-meal-filters">
+      <button class="chip active" data-type="" onclick="setDiscoverFilter(this, '')">All</button>
+      <button class="chip" data-type="breakfast" onclick="setDiscoverFilter(this, 'breakfast')">Breakfast</button>
+      <button class="chip" data-type="lunch" onclick="setDiscoverFilter(this, 'lunch')">Lunch</button>
+      <button class="chip" data-type="dinner" onclick="setDiscoverFilter(this, 'dinner')">Dinner</button>
+      <button class="chip" data-type="snack" onclick="setDiscoverFilter(this, 'snack')">Snack</button>
+    </div>
+
+    <div id="discover-grid" class="discover-grid">
+      <div class="loading-state">Loading public recipes…</div>
     </div>
   </section>
 

@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from database import Base, engine
-from routers import reels, recipes, meal_plan, shopping_list, diet, instagram
+from routers import reels, recipes, meal_plan, shopping_list, diet, instagram, public
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
@@ -43,6 +43,7 @@ app.include_router(meal_plan.router)
 app.include_router(shopping_list.router)
 app.include_router(diet.router)
 app.include_router(instagram.router)
+app.include_router(public.router)
 
 
 @app.get("/", include_in_schema=False)

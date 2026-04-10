@@ -898,3 +898,150 @@ html, body {
   100% { opacity: 1; }
 }
 .progress-bar-fill.running { animation: pulse-bar 1.5s ease-in-out infinite; }
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE  (≤ 768 px)
+═══════════════════════════════════════════════════════════════ */
+
+/* Mobile nav dropdown — hidden on desktop */
+.mobile-nav {
+  display: none;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+/* Discover tab styles */
+.discover-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.public-recipe-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+}
+.public-recipe-card .recipe-thumb,
+.public-recipe-card .recipe-thumb-placeholder {
+  cursor: default;
+}
+.public-card-footer {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.discover-search-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.discover-search-row .search-box { max-width: 360px; }
+.discover-filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+
+@media (max-width: 768px) {
+  /* ── Header ──────────────────────────────────────── */
+  .header-inner {
+    padding: 0 12px;
+    height: 52px;
+    gap: 10px;
+  }
+  .logo-icon { font-size: 18px; }
+  .logo-text  { font-size: 15px; }
+  .tab-nav    { display: none; }
+  .mobile-nav { display: block; }
+
+  /* ── Main ────────────────────────────────────────── */
+  .main { padding: 12px; }
+  .section-title { font-size: 20px; }
+  .section-header { flex-direction: column; align-items: flex-start; }
+  .header-actions { width: 100%; }
+  .header-actions .btn { flex: 1; justify-content: center; }
+
+  /* ── Recipe grid — 2-column tiles ───────────────── */
+  .recipe-grid,
+  .discover-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .recipe-thumb,
+  .recipe-thumb-placeholder { height: 110px; }
+  .recipe-card-body { padding: 8px; }
+  .recipe-card-title { font-size: 12px; }
+  .recipe-macros    { font-size: 11px; }
+
+  /* ── Layouts — single column ─────────────────────── */
+  .two-col,
+  .two-col-65 { grid-template-columns: 1fr; }
+
+  /* ── Planner — one day per row ──────────────────── */
+  .planner-grid { grid-template-columns: 1fr !important; }
+
+  /* ── Cards ──────────────────────────────────────── */
+  .card { padding: 14px; gap: 12px; }
+  .card-title { font-size: 15px; }
+
+  /* ── Toolbar ─────────────────────────────────────── */
+  .toolbar { margin-bottom: 16px; }
+  .toolbar-row2 { flex-direction: column; align-items: stretch; gap: 8px; }
+  .sort-select   { margin-left: 0; width: 100%; }
+  .search-box    { max-width: 100%; }
+  .filter-chips  { gap: 4px; }
+  .chip          { padding: 5px 10px; font-size: 12px; }
+
+  /* ── Buttons ─────────────────────────────────────── */
+  .btn { padding: 10px 14px; font-size: 13px; }
+  .btn-sm { padding: 7px 10px; font-size: 12px; }
+
+  /* ── Stats row ───────────────────────────────────── */
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+
+  /* ── Modals — bottom sheet ───────────────────────── */
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+    background: rgba(0,0,0,0.7);
+  }
+  .modal {
+    max-width: 100% !important;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 20px 20px 0 0;
+    overflow-y: auto;
+  }
+  .modal-close { top: 14px; right: 14px; }
+
+  /* ── Log box ─────────────────────────────────────── */
+  .log-box { height: 130px; font-size: 11px; }
+
+  /* ── Shopping section header ─────────────────────── */
+  .header-actions .btn { min-width: 0; }
+
+  /* ── Progress panel ──────────────────────────────── */
+  .progress-panel { padding: 12px; }
+  .progress-status-label { font-size: 13px; }
+
+  /* ── Discover grid matching recipe grid ─────────── */
+  .public-recipe-card .recipe-thumb,
+  .public-recipe-card .recipe-thumb-placeholder { height: 110px; }
+}

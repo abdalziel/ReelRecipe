@@ -1148,24 +1148,63 @@ function showStatus(el, type, msg) {
 }
 
 /**
- * Show an animated import status with live elapsed timer and step progression.
- * steps: [{msg, duration}] — duration is how many seconds before advancing to next step.
+ * Show an animated import status with progress bar, percentage, step messages, and elapsed timer.
+ * steps: [{msg, duration}] — duration is seconds before advancing; last step should use 999.
+ * Progress caps at 95% until stop() is called, then animates to 100%.
  * Returns a stop() function to call when the request completes.
  */
 function startImportTimer(el, steps) {
   el.classList.remove('hidden');
   el.className = 'import-status loading';
+  el.style.cssText = 'padding:14px 16px;line-height:1.5';
+
+  // Total expected seconds = sum of all finite step durations
+  const totalExpected = steps.reduce((s, x) => s + (x.duration < 999 ? x.duration : 0), 0) || 30;
 
   let stepIdx = 0;
   let elapsed = 0;
   let stepElapsed = 0;
+  let pct = 0;
+
+  function calcPct() {
+    // Progress through completed steps
+    let completedSecs = 0;
+    for (let i = 0; i < stepIdx; i++) completedSecs += steps[i].duration < 999 ? steps[i].duration : 0;
+    // Progress within current step (capped at its duration)
+    const cur = steps[stepIdx];
+    const curDur = cur.duration < 999 ? cur.duration : totalExpected * 0.25;
+    const withinStep = Math.min(stepElapsed, curDur);
+    const raw = ((completedSecs + withinStep) / totalExpected) * 100;
+    return Math.min(raw, 95); // never reach 100% until stop() is called
+  }
 
   function render() {
+    pct = calcPct();
     const step = steps[stepIdx];
-    el.innerHTML =
-      `<span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:6px"></span>` +
-      `<span>${step.msg}</span>` +
-      `<span style="float:right;opacity:.55;font-size:11px;font-variant-numeric:tabular-nums">${elapsed}s</span>`;
+    const barColor = pct < 50
+      ? `linear-gradient(90deg, #f59e0b, #f97316)`
+      : pct < 85
+        ? `linear-gradient(90deg, #f97316, #a855f7)`
+        : `linear-gradient(90deg, #a855f7, #6366f1)`;
+
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:500">${step.msg}</span>
+        <span style="font-size:11px;opacity:.55;font-variant-numeric:tabular-nums">${elapsed}s elapsed</span>
+      </div>
+      <div style="background:var(--border);border-radius:99px;height:8px;overflow:hidden;margin-bottom:6px">
+        <div style="
+          height:100%;width:${pct.toFixed(1)}%;
+          background:${barColor};
+          border-radius:99px;
+          transition:width .9s cubic-bezier(.4,0,.2,1);
+          box-shadow:0 0 8px rgba(168,85,247,.4);
+        "></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:11px;opacity:.45">${steps.map((s, i) => i === stepIdx ? `<b style="opacity:1;color:var(--accent)">${s.msg.split(' ').slice(1).join(' ')}</b>` : `<span style="opacity:.4">${s.msg.split(' ').slice(1).join(' ')}</span>`).join(' → ')}</span>
+        <span style="font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">${Math.round(pct)}%</span>
+      </div>`;
   }
 
   render();
@@ -1173,15 +1212,36 @@ function startImportTimer(el, steps) {
   const interval = setInterval(() => {
     elapsed++;
     stepElapsed++;
-    const step = steps[stepIdx];
-    if (stepElapsed >= step.duration && stepIdx < steps.length - 1) {
+    if (stepElapsed >= steps[stepIdx].duration && stepIdx < steps.length - 1) {
       stepIdx++;
       stepElapsed = 0;
     }
     render();
   }, 1000);
 
-  return function stop() { clearInterval(interval); };
+  return function stop() {
+    clearInterval(interval);
+    // Flash to 100%
+    pct = 100;
+    const step = steps[steps.length - 1];
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:500">✅ Done!</span>
+        <span style="font-size:11px;opacity:.55;font-variant-numeric:tabular-nums">${elapsed}s elapsed</span>
+      </div>
+      <div style="background:var(--border);border-radius:99px;height:8px;overflow:hidden;margin-bottom:6px">
+        <div style="
+          height:100%;width:100%;
+          background:linear-gradient(90deg,#22c55e,#16a34a);
+          border-radius:99px;
+          transition:width .4s ease;
+          box-shadow:0 0 8px rgba(34,197,94,.4);
+        "></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <span style="font-size:13px;font-weight:700;color:#22c55e">100%</span>
+      </div>`;
+  };
 }
 
 function escHtml(str) {

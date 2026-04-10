@@ -248,16 +248,22 @@ async function importSingleReel() {
   if (!url) { showStatus(status, 'error', 'Please paste a reel URL first.'); return; }
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Extracting recipe…';
-  showStatus(status, 'loading', '⏳ Downloading reel, transcribing audio, and extracting recipe… this takes 30–60 seconds.');
+  btn.innerHTML = '<span class="spinner"></span> Importing…';
+  const stopTimer = startImportTimer(status, [
+    { msg: '📥 Downloading reel from Instagram…',       duration: 12 },
+    { msg: '🎙 Transcribing audio…',                    duration: 20 },
+    { msg: '🤖 Extracting recipe with Claude…',         duration: 20 },
+    { msg: '💾 Almost done, saving to your library…',   duration: 999 },
+  ]);
 
   try {
     const recipe = await api('/api/reels/process', { method: 'POST', body: JSON.stringify({ url }) });
+    stopTimer();
     showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
     document.getElementById('reel-url-input').value = '';
-    // Refresh library if on library tab
     loadLibrary();
   } catch (e) {
+    stopTimer();
     showStatus(status, 'error', `❌ ${e.message}`);
   } finally {
     btn.disabled = false;
@@ -279,15 +285,21 @@ async function importWebRecipe() {
   if (!url) { showStatus(status, 'error', 'Please paste a recipe URL first.'); return; }
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Fetching & extracting…';
-  showStatus(status, 'loading', '⏳ Fetching page and extracting recipe… this takes 15–30 seconds.');
+  btn.innerHTML = '<span class="spinner"></span> Importing…';
+  const stopTimer = startImportTimer(status, [
+    { msg: '🌐 Fetching recipe page…',              duration: 8 },
+    { msg: '🔍 Parsing recipe content…',            duration: 8 },
+    { msg: '🤖 Extracting recipe with Claude…',     duration: 999 },
+  ]);
 
   try {
     const recipe = await api('/api/reels/import-web', { method: 'POST', body: JSON.stringify({ url }) });
+    stopTimer();
     showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
     document.getElementById('web-url-input').value = '';
     loadLibrary();
   } catch (e) {
+    stopTimer();
     showStatus(status, 'error', `❌ ${e.message}`);
   } finally {
     btn.disabled = false;
@@ -308,7 +320,10 @@ async function importPhotoRecipe(event) {
   const zone = document.getElementById('photo-drop-zone');
 
   zone.innerHTML = `<div class="upload-icon"><span class="spinner"></span></div><div class="upload-text">Analyzing recipe…</div>`;
-  showStatus(status, 'loading', '⏳ Sending photo to Claude for recipe extraction…');
+  const stopTimer = startImportTimer(status, [
+    { msg: '📤 Uploading photo…',                        duration: 5 },
+    { msg: '👁 Analyzing image with Claude Vision…',     duration: 999 },
+  ]);
 
   const formData = new FormData();
   formData.append('file', file);
@@ -320,9 +335,11 @@ async function importPhotoRecipe(event) {
       throw new Error(err.detail || resp.statusText);
     }
     const recipe = await resp.json();
+    stopTimer();
     showStatus(status, 'success', `✅ "${recipe.title}" saved successfully!`);
     loadLibrary();
   } catch (e) {
+    stopTimer();
     showStatus(status, 'error', `❌ ${e.message}`);
   } finally {
     zone.innerHTML = `<div class="upload-icon">📸</div><div class="upload-text">Click to choose a photo</div><div class="upload-hint">JPEG, PNG, or WebP — up to 20 MB</div>`;
@@ -1128,6 +1145,43 @@ function showStatus(el, type, msg) {
   el.className = 'import-status ' + type;
   el.textContent = msg;
   el.classList.remove('hidden');
+}
+
+/**
+ * Show an animated import status with live elapsed timer and step progression.
+ * steps: [{msg, duration}] — duration is how many seconds before advancing to next step.
+ * Returns a stop() function to call when the request completes.
+ */
+function startImportTimer(el, steps) {
+  el.classList.remove('hidden');
+  el.className = 'import-status loading';
+
+  let stepIdx = 0;
+  let elapsed = 0;
+  let stepElapsed = 0;
+
+  function render() {
+    const step = steps[stepIdx];
+    el.innerHTML =
+      `<span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:6px"></span>` +
+      `<span>${step.msg}</span>` +
+      `<span style="float:right;opacity:.55;font-size:11px;font-variant-numeric:tabular-nums">${elapsed}s</span>`;
+  }
+
+  render();
+
+  const interval = setInterval(() => {
+    elapsed++;
+    stepElapsed++;
+    const step = steps[stepIdx];
+    if (stepElapsed >= step.duration && stepIdx < steps.length - 1) {
+      stepIdx++;
+      stepElapsed = 0;
+    }
+    render();
+  }, 1000);
+
+  return function stop() { clearInterval(interval); };
 }
 
 function escHtml(str) {

@@ -843,10 +843,23 @@ async function loadShoppingLists() {
 
 function renderListTabs() {
   const tabs = document.getElementById('shopping-list-tabs');
-  tabs.innerHTML = shoppingLists.map(l => `
+  const tabBtns = shoppingLists.map(l => `
     <button class="list-tab-btn ${l.id === activeListId ? 'active' : ''}" onclick="selectList(${l.id})">
       ${escHtml(l.name)}
     </button>`).join('');
+  const clearBtn = activeListId
+    ? `<button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--red)" onclick="clearShoppingList(${activeListId})">🗑 Clear List</button>`
+    : '';
+  tabs.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${tabBtns}${clearBtn}</div>`;
+}
+
+async function clearShoppingList(id) {
+  if (!confirm('Remove this shopping list? This cannot be undone.')) return;
+  try {
+    await api(`/api/shopping-lists/${id}`, { method: 'DELETE' });
+    activeListId = null;
+    await loadShoppingLists();
+  } catch (e) { alert('Failed to delete list: ' + e.message); }
 }
 
 async function selectList(id) {

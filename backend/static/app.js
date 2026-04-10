@@ -767,14 +767,13 @@ function renderShopRecipeList(recipes) {
     return;
   }
   listEl.innerHTML = recipes.map(r => `
-    <label class="shop-recipe-row ${shopSelectedIds.has(r.id) ? 'selected' : ''}" onclick="toggleShopRecipe(${r.id}, this)">
-      <input type="checkbox" ${shopSelectedIds.has(r.id) ? 'checked' : ''} style="display:none" />
+    <div class="shop-recipe-row ${shopSelectedIds.has(r.id) ? 'selected' : ''}" onclick="toggleShopRecipe(${r.id}, this)">
       <div class="shop-recipe-check">${shopSelectedIds.has(r.id) ? '✓' : ''}</div>
       <div class="shop-recipe-info">
         <div class="shop-recipe-title">${escHtml(r.title)}</div>
         ${r.meal_type ? `<span class="meal-badge ${r.meal_type}" style="font-size:11px">${r.meal_type}</span>` : ''}
       </div>
-    </label>`).join('');
+    </div>`).join('');
   updateShopCount();
 }
 

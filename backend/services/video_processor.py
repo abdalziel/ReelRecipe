@@ -46,6 +46,10 @@ async def download_reel(url: str, output_dir: str) -> dict:
         "no_warnings": True,
         "writeinfojson": False,
         "writethumbnail": True,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://www.instagram.com/",
+        },
         **({"cookiefile": _cookies} if os.path.exists(_cookies) else {}),
     }
 

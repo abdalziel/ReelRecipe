@@ -124,11 +124,15 @@ async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
 
     with tempfile.TemporaryDirectory(dir=settings.upload_dir) as tmp:
         outtmpl = os.path.join(tmp, "%(id)s.%(ext)s")
+        _cookies = os.path.expanduser(
+            "~/Documents/Claude/ReelRecipe/Cookies/www.instagram.com_cookies.txt"
+        )
         ydl_opts = {
             "outtmpl": outtmpl,
             "format": "worst[ext=mp4]/worst",
             "quiet": True,
             "no_warnings": True,
+            **({"cookiefile": _cookies} if os.path.exists(_cookies) else {}),
         }
 
         def _download():

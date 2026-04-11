@@ -35,6 +35,10 @@ async def download_reel(url: str, output_dir: str) -> dict:
     output_template = os.path.join(output_dir, "%(id)s.%(ext)s")
     audio_template = os.path.join(output_dir, "%(id)s_audio.%(ext)s")
 
+    _cookies = os.path.expanduser(
+        "~/Documents/Claude/ReelRecipe/Cookies/www.instagram.com_cookies.txt"
+    )
+
     ydl_opts = {
         "outtmpl": output_template,
         "format": "best[ext=mp4]/best",
@@ -42,6 +46,7 @@ async def download_reel(url: str, output_dir: str) -> dict:
         "no_warnings": True,
         "writeinfojson": False,
         "writethumbnail": True,
+        **({"cookiefile": _cookies} if os.path.exists(_cookies) else {}),
     }
 
     info = {}

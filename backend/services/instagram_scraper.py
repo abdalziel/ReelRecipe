@@ -5,6 +5,7 @@ filters for video reels, and runs each through the recipe extraction pipeline.
 Progress is tracked in a simple in-memory store (single-user app).
 """
 import asyncio
+import base64
 import os
 import time
 import tempfile
@@ -13,7 +14,9 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 
+import httpx
 import instaloader
+from anthropic import AsyncAnthropic
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -21,6 +24,8 @@ from models import Recipe, Ingredient, RecipeIngredient
 from services.recipe_extractor import extract_recipe_from_reel, NoRecipeFoundError
 from services.duplicate_detector import find_duplicate
 from services.video_processor import transcribe_audio
+
+_haiku = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 # ── In-memory job tracker ──────────────────────────────────────────────────
 
@@ -164,6 +169,70 @@ def _url_already_imported(source_url: str, db: Session) -> bool:
     return db.query(Recipe).filter(Recipe.source_url == source_url).first() is not None
 
 
+async def _passes_recipe_gates(post: instaloader.Post) -> tuple[bool, str]:
+    """
+    Two-gate pre-filter to avoid wasting Sonnet calls on non-recipe posts.
+
+    Gate 1 — Haiku vision on thumbnail (catches food posts with no caption).
+    Gate 2 — Haiku caption text check (removes lifestyle/food-adjacent posts).
+
+    Returns (True, "") if likely a recipe, or (False, reason) to skip.
+    On any network/API error the gate passes to avoid false negatives.
+    """
+    # ── Gate 1: thumbnail visual ───────────────────────────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(post.url)
+            r.raise_for_status()
+            img_b64 = base64.standard_b64encode(r.content).decode()
+            media_type = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+
+        resp = await _haiku.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=5,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": media_type, "data": img_b64},
+                    },
+                    {
+                        "type": "text",
+                        "text": "Does this image show someone cooking or preparing food? Answer only Yes or No.",
+                    },
+                ],
+            }],
+        )
+        if not resp.content[0].text.strip().lower().startswith("y"):
+            return False, "thumbnail doesn't show cooking or food"
+    except Exception:
+        pass  # Network/API error — pass through to avoid false negatives
+
+    # ── Gate 2: caption text ───────────────────────────────────────────────
+    caption = (post.caption or "").strip()
+    if caption:
+        try:
+            resp = await _haiku.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=5,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Does this social media caption suggest a cooking or food recipe video?\n"
+                        f"Caption: \"{caption[:600]}\"\n"
+                        "Answer only Yes or No."
+                    ),
+                }],
+            )
+            if not resp.content[0].text.strip().lower().startswith("y"):
+                return False, "caption doesn't suggest a recipe"
+        except Exception:
+            pass  # Pass through on error
+
+    return True, ""
+
+
 # ── Main bulk import pipeline ──────────────────────────────────────────────
 
 async def run_bulk_import(
@@ -303,6 +372,16 @@ async def run_bulk_import(
             # URL check first (fast — avoids re-downloading the same reel)
             if _url_already_imported(source_url, db):
                 _log(f"😋  Already in your library (same URL): {shortcode}")
+                _current_job["skipped"] += 1
+                _current_job["processed"] += 1
+                continue
+
+            # Gate 1 + 2: thumbnail visual then caption text (cheap Haiku calls)
+            # Runs before any video download to avoid wasting credits on non-recipe posts
+            _log(f"🔍  Checking if recipe: {shortcode}")
+            passes, skip_reason = await _passes_recipe_gates(post)
+            if not passes:
+                _log(f"⏭️  Skipped (not a recipe — {skip_reason}): {shortcode}")
                 _current_job["skipped"] += 1
                 _current_job["processed"] += 1
                 continue

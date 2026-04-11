@@ -776,9 +776,9 @@ html, body {
 .modal-close:hover { color: var(--text); background: var(--surface2); }
 
 /* ── Recipe Modal Content ──────────────────────────────────── */
-.modal-hero { width: 100%; height: 220px; object-fit: cover; }
+.modal-hero { width: 100%; height: 320px; object-fit: cover; }
 .modal-hero-placeholder {
-  width: 100%; height: 220px;
+  width: 100%; height: 320px;
   background: var(--surface);
   display: flex;
   align-items: center;

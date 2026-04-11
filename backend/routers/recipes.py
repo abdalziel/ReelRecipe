@@ -102,6 +102,61 @@ async def update_thumbnail(
     return {"thumbnail_url": recipe.thumbnail_url}
 
 
+@router.post("/{recipe_id}/thumbnail/from-reel")
+async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
+    """Re-extract the cover photo from the original reel source using yt-dlp thumbnail-only mode."""
+    import asyncio, tempfile, yt_dlp
+    from pathlib import Path
+
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if not recipe.source_url:
+        raise HTTPException(status_code=422, detail="No source URL for this recipe.")
+
+    thumb_dir = os.path.join(settings.upload_dir, "thumbnails")
+    os.makedirs(thumb_dir, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(dir=settings.upload_dir) as tmp:
+        outtmpl = os.path.join(tmp, "%(id)s.%(ext)s")
+        ydl_opts = {
+            "outtmpl": outtmpl,
+            "skip_download": True,
+            "writethumbnail": True,
+            "quiet": True,
+            "no_warnings": True,
+        }
+
+        def _fetch():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(recipe.source_url, download=True)
+                return info.get("id", "thumb")
+
+        loop = asyncio.get_event_loop()
+        try:
+            video_id = await loop.run_in_executor(None, _fetch)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Could not fetch reel thumbnail: {e}")
+
+        # Find the downloaded thumbnail
+        src = None
+        for f in Path(tmp).iterdir():
+            if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+                src = f
+                break
+        if not src:
+            raise HTTPException(status_code=422, detail="No thumbnail found in reel.")
+
+        filename = f"recipe_{recipe_id}_reel{src.suffix}"
+        dest = os.path.join(thumb_dir, filename)
+        shutil.copy2(str(src), dest)
+
+    recipe.thumbnail_url = f"/uploads/thumbnails/{filename}"
+    db.commit()
+    db.refresh(recipe)
+    return {"thumbnail_url": recipe.thumbnail_url}
+
+
 @router.delete("/{recipe_id}", status_code=204)
 def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()

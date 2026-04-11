@@ -177,9 +177,15 @@ async function openRecipe(id) {
         backdrop-filter:blur(4px);border-radius:inherit;
       ">
         <div style="color:#fff;font-weight:600;font-size:14px">Change Cover Photo</div>
+        ${r.source_type === 'instagram_reel' ? `
+        <button onclick="extractReelThumbnail(${r.id}, this)" style="
+          background:#e1306c;color:#fff;border:none;border-radius:8px;
+          padding:8px 20px;cursor:pointer;font-size:13px;font-weight:600;width:200px;
+        ">📹 Extract from Reel</button>
+        <div style="color:rgba(255,255,255,.5);font-size:12px">— or —</div>` : ''}
         <label style="
           background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;
-          cursor:pointer;font-size:13px;font-weight:600;
+          cursor:pointer;font-size:13px;font-weight:600;width:200px;text-align:center;
         ">📤 Upload Photo<input type="file" accept="image/*" style="display:none" onchange="uploadCoverPhoto(${r.id}, this)"></label>
         <div style="color:rgba(255,255,255,.5);font-size:12px">— or —</div>
         <div style="display:flex;gap:8px;width:280px">
@@ -263,6 +269,22 @@ function openCoverEditor(recipeId) {
 }
 function closeCoverEditor(recipeId) {
   document.getElementById(`cover-editor-${recipeId}`).classList.add('hidden');
+}
+
+async function extractReelThumbnail(recipeId, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Fetching…';
+  try {
+    const data = await api(`/api/recipes/${recipeId}/thumbnail/from-reel`, { method: 'POST' });
+    _refreshModalHero(data.thumbnail_url);
+    closeCoverEditor(recipeId);
+    loadLibrary();
+  } catch (e) {
+    alert('Could not extract thumbnail: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
 }
 
 async function uploadCoverPhoto(recipeId, input) {

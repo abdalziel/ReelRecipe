@@ -104,9 +104,14 @@ async def update_thumbnail(
 
 @router.post("/{recipe_id}/thumbnail/from-reel")
 async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
-    """Re-extract the cover photo from the original reel source using yt-dlp thumbnail-only mode."""
-    import asyncio, tempfile, yt_dlp
+    """
+    Download the reel at lowest quality, extract a frame at 45% duration via ffmpeg,
+    and save it as a preview file. Returns the preview URL WITHOUT updating the recipe
+    so the user can confirm before committing.
+    """
+    import asyncio, tempfile, subprocess, yt_dlp
     from pathlib import Path
+    from services.video_processor import _extract_mid_frame
 
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
@@ -121,40 +126,41 @@ async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
         outtmpl = os.path.join(tmp, "%(id)s.%(ext)s")
         ydl_opts = {
             "outtmpl": outtmpl,
-            "skip_download": True,
-            "writethumbnail": True,
+            "format": "worst[ext=mp4]/worst",
             "quiet": True,
             "no_warnings": True,
         }
 
-        def _fetch():
+        def _download():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(recipe.source_url, download=True)
-                return info.get("id", "thumb")
+                return info.get("id", "reel"), info.get("duration") or 0
 
         loop = asyncio.get_event_loop()
         try:
-            video_id = await loop.run_in_executor(None, _fetch)
+            video_id, duration = await loop.run_in_executor(None, _download)
         except Exception as e:
-            raise HTTPException(status_code=422, detail=f"Could not fetch reel thumbnail: {e}")
+            raise HTTPException(status_code=422, detail=f"Could not download reel: {e}")
 
-        # Find the downloaded thumbnail
-        src = None
+        # Find the downloaded video file
+        video_path = None
         for f in Path(tmp).iterdir():
-            if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
-                src = f
+            if f.suffix.lower() in (".mp4", ".webm", ".mkv", ".mov"):
+                video_path = str(f)
                 break
-        if not src:
-            raise HTTPException(status_code=422, detail="No thumbnail found in reel.")
+        if not video_path:
+            raise HTTPException(status_code=422, detail="No video file found after download.")
 
-        filename = f"recipe_{recipe_id}_reel{src.suffix}"
-        dest = os.path.join(thumb_dir, filename)
-        shutil.copy2(str(src), dest)
+        # Extract mid-video frame
+        preview_filename = f"preview_{recipe_id}.jpg"
+        preview_dest = os.path.join(thumb_dir, preview_filename)
+        success = await loop.run_in_executor(
+            None, _extract_mid_frame, video_path, duration, preview_dest
+        )
+        if not success:
+            raise HTTPException(status_code=422, detail="Could not extract frame from video.")
 
-    recipe.thumbnail_url = f"/uploads/thumbnails/{filename}"
-    db.commit()
-    db.refresh(recipe)
-    return {"thumbnail_url": recipe.thumbnail_url}
+    return {"preview_url": f"/uploads/thumbnails/{preview_filename}"}
 
 
 @router.delete("/{recipe_id}", status_code=204)

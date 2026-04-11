@@ -171,37 +171,11 @@ async function openRecipe(id) {
         padding:6px 12px;font-size:12px;cursor:pointer;backdrop-filter:blur(4px);
         display:flex;align-items:center;gap:5px;
       ">📷 Change cover</button>
-      <div id="cover-editor-${r.id}" class="hidden" style="
-        position:absolute;inset:0;background:rgba(0,0,0,.75);
-        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-        backdrop-filter:blur(4px);border-radius:inherit;
-      ">
-        <div style="color:#fff;font-weight:600;font-size:14px">Change Cover Photo</div>
-        ${r.source_type === 'instagram_reel' ? `
-        <button onclick="extractReelThumbnail(${r.id}, this)" style="
-          background:#e1306c;color:#fff;border:none;border-radius:8px;
-          padding:8px 20px;cursor:pointer;font-size:13px;font-weight:600;width:200px;
-        ">📹 Extract from Reel</button>
-        <div style="color:rgba(255,255,255,.5);font-size:12px">— or —</div>` : ''}
-        <label style="
-          background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;
-          cursor:pointer;font-size:13px;font-weight:600;width:200px;text-align:center;
-        ">📤 Upload Photo<input type="file" accept="image/*" style="display:none" onchange="uploadCoverPhoto(${r.id}, this)"></label>
-        <div style="color:rgba(255,255,255,.5);font-size:12px">— or —</div>
-        <div style="display:flex;gap:8px;width:280px">
-          <input id="cover-url-${r.id}" type="url" placeholder="Paste image URL…" style="
-            flex:1;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);
-            background:rgba(255,255,255,.1);color:#fff;font-size:12px;
-          ">
-          <button onclick="saveCoverUrl(${r.id})" style="
-            background:var(--accent);color:#fff;border:none;border-radius:8px;
-            padding:8px 14px;cursor:pointer;font-size:12px;font-weight:600;
-          ">Save</button>
-        </div>
-        <button onclick="closeCoverEditor(${r.id})" style="
-          color:rgba(255,255,255,.6);background:none;border:none;cursor:pointer;font-size:12px;margin-top:4px;
-        ">Cancel</button>
-      </div>
+      <div id="cover-editor-${r.id}" class="hidden" data-source-type="${escHtml(r.source_type || '')}" style="
+        position:absolute;inset:0;background:rgba(0,0,0,.78);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+        backdrop-filter:blur(6px);border-radius:inherit;padding:24px;
+      "></div>
     </div>`;
     const totalTime = (r.prep_time_minutes || 0) + (r.cook_time_minutes || 0);
     const pills = [
@@ -265,26 +239,85 @@ async function openRecipe(id) {
 // ── Cover photo editor ─────────────────────────────────────────────────────
 
 function openCoverEditor(recipeId) {
-  document.getElementById(`cover-editor-${recipeId}`).classList.remove('hidden');
+  const editor = document.getElementById(`cover-editor-${recipeId}`);
+  // Re-render the full editor options (in case preview replaced them)
+  const isReel = editor.dataset.sourceType === 'instagram_reel';
+  editor.innerHTML = `
+    <div style="color:#fff;font-weight:600;font-size:15px">Change Cover Photo</div>
+    ${isReel ? `
+    <button onclick="extractReelThumbnail(${recipeId}, this)" style="
+      background:#e1306c;color:#fff;border:none;border-radius:8px;
+      padding:10px 0;cursor:pointer;font-size:13px;font-weight:600;width:220px;
+    ">📹 Extract from Reel</button>
+    <div style="color:rgba(255,255,255,.45);font-size:12px">— or —</div>` : ''}
+    <label style="
+      background:var(--accent);color:#fff;padding:10px 0;border-radius:8px;
+      cursor:pointer;font-size:13px;font-weight:600;width:220px;text-align:center;display:block;
+    ">📤 Upload Photo<input type="file" accept="image/*" style="display:none" onchange="uploadCoverPhoto(${recipeId}, this)"></label>
+    <div style="color:rgba(255,255,255,.45);font-size:12px">— or —</div>
+    <div style="display:flex;gap:8px;width:260px">
+      <input id="cover-url-${recipeId}" type="url" placeholder="Paste image URL…" style="
+        flex:1;padding:9px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);
+        background:rgba(255,255,255,.1);color:#fff;font-size:12px;
+      ">
+      <button onclick="saveCoverUrl(${recipeId})" style="
+        background:var(--accent);color:#fff;border:none;border-radius:8px;
+        padding:9px 16px;cursor:pointer;font-size:12px;font-weight:600;
+      ">Save</button>
+    </div>
+    <button onclick="closeCoverEditor(${recipeId})" style="
+      color:rgba(255,255,255,.5);background:none;border:none;cursor:pointer;font-size:12px;margin-top:2px;
+    ">Cancel</button>`;
+  editor.classList.remove('hidden');
 }
 function closeCoverEditor(recipeId) {
   document.getElementById(`cover-editor-${recipeId}`).classList.add('hidden');
 }
 
 async function extractReelThumbnail(recipeId, btn) {
-  const orig = btn.textContent;
+  const editor = document.getElementById(`cover-editor-${recipeId}`);
   btn.disabled = true;
-  btn.textContent = '⏳ Fetching…';
+  btn.textContent = '⏳ Downloading & extracting…';
   try {
     const data = await api(`/api/recipes/${recipeId}/thumbnail/from-reel`, { method: 'POST' });
+    // Show preview — let user confirm before saving
+    editor.innerHTML = `
+      <div style="color:#fff;font-weight:600;font-size:14px;margin-bottom:8px">Use this photo?</div>
+      <img src="${data.preview_url}?t=${Date.now()}" style="
+        width:260px;max-height:180px;object-fit:cover;border-radius:10px;
+        box-shadow:0 4px 20px rgba(0,0,0,.5);margin-bottom:14px;
+      ">
+      <div style="display:flex;gap:10px">
+        <button onclick="confirmReelThumbnail(${recipeId}, '${data.preview_url}')" style="
+          background:#22c55e;color:#fff;border:none;border-radius:8px;
+          padding:9px 22px;cursor:pointer;font-size:13px;font-weight:600;
+        ">✓ Use This Photo</button>
+        <button onclick="openCoverEditor(${recipeId})" style="
+          background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;
+          padding:9px 18px;cursor:pointer;font-size:13px;
+        ">← Try Another</button>
+      </div>
+      <button onclick="closeCoverEditor(${recipeId})" style="
+        color:rgba(255,255,255,.5);background:none;border:none;cursor:pointer;font-size:12px;margin-top:10px;
+      ">Cancel</button>`;
+  } catch (e) {
+    alert('Could not extract frame: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '📹 Extract from Reel';
+  }
+}
+
+async function confirmReelThumbnail(recipeId, previewUrl) {
+  const fd = new FormData();
+  fd.append('url', previewUrl);
+  try {
+    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    const data = await res.json();
     _refreshModalHero(data.thumbnail_url);
     closeCoverEditor(recipeId);
     loadLibrary();
-  } catch (e) {
-    alert('Could not extract thumbnail: ' + e.message);
-    btn.disabled = false;
-    btn.textContent = orig;
-  }
+  } catch (e) { alert('Failed to save cover: ' + e.message); }
 }
 
 async function uploadCoverPhoto(recipeId, input) {

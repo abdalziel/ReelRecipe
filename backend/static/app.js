@@ -279,28 +279,37 @@ async function extractReelThumbnail(recipeId, btn) {
   btn.textContent = '⏳ Downloading & extracting…';
   try {
     const data = await api(`/api/recipes/${recipeId}/thumbnail/from-reel`, { method: 'POST' });
-    // Show preview — let user confirm before saving
+    const t = Date.now();
+
+    const frameCard = (url, label) => url ? `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+        <div style="color:rgba(255,255,255,.6);font-size:11px;font-weight:600;letter-spacing:.05em">${label}</div>
+        <img src="${url}?t=${t}" style="
+          width:120px;height:90px;object-fit:cover;border-radius:8px;
+          box-shadow:0 4px 14px rgba(0,0,0,.5);
+        ">
+        <button onclick="confirmReelThumbnail(${recipeId}, '${url}')" style="
+          background:#22c55e;color:#fff;border:none;border-radius:7px;
+          padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;
+        ">Use This</button>
+      </div>` : '';
+
     editor.innerHTML = `
-      <div style="color:#fff;font-weight:600;font-size:14px;margin-bottom:8px">Use this photo?</div>
-      <img src="${data.preview_url}?t=${Date.now()}" style="
-        width:260px;max-height:180px;object-fit:cover;border-radius:10px;
-        box-shadow:0 4px 20px rgba(0,0,0,.5);margin-bottom:14px;
-      ">
-      <div style="display:flex;gap:10px">
-        <button onclick="confirmReelThumbnail(${recipeId}, '${data.preview_url}')" style="
-          background:#22c55e;color:#fff;border:none;border-radius:8px;
-          padding:9px 22px;cursor:pointer;font-size:13px;font-weight:600;
-        ">✓ Use This Photo</button>
-        <button onclick="openCoverEditor(${recipeId})" style="
-          background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;
-          padding:9px 18px;cursor:pointer;font-size:13px;
-        ">← Try Another</button>
+      <div style="color:#fff;font-weight:600;font-size:13px;letter-spacing:.03em;opacity:.85">PICK A FRAME</div>
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        ${frameCard(data.preview_45, '45% through')}
+        ${frameCard(data.preview_95, '95% through')}
       </div>
+      <div style="width:100%;height:1px;background:rgba(255,255,255,.15);margin:2px 0"></div>
+      <button onclick="openCoverEditor(${recipeId})" style="
+        background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:8px;
+        padding:7px 16px;cursor:pointer;font-size:12px;
+      ">Use another format</button>
       <button onclick="closeCoverEditor(${recipeId})" style="
-        color:rgba(255,255,255,.5);background:none;border:none;cursor:pointer;font-size:12px;margin-top:10px;
+        color:rgba(255,255,255,.4);background:none;border:none;cursor:pointer;font-size:11px;
       ">Cancel</button>`;
   } catch (e) {
-    alert('Could not extract frame: ' + e.message);
+    alert('Could not extract frames: ' + e.message);
     btn.disabled = false;
     btn.textContent = '📹 Extract from Reel';
   }

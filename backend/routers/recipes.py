@@ -151,16 +151,30 @@ async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
         if not video_path:
             raise HTTPException(status_code=422, detail="No video file found after download.")
 
-        # Extract mid-video frame
-        preview_filename = f"preview_{recipe_id}.jpg"
-        preview_dest = os.path.join(thumb_dir, preview_filename)
-        success = await loop.run_in_executor(
-            None, _extract_mid_frame, video_path, duration, preview_dest
-        )
-        if not success:
-            raise HTTPException(status_code=422, detail="Could not extract frame from video.")
+        # Extract frames at 45% and 95%
+        def _extract_frame_at(pct, out_path):
+            seek = max(1, (duration or 12) * pct)
+            result = subprocess.run(
+                ["ffmpeg", "-ss", str(seek), "-i", video_path,
+                 "-vframes", "1", "-q:v", "2", out_path, "-y", "-loglevel", "quiet"],
+                capture_output=True,
+            )
+            return result.returncode == 0 and os.path.exists(out_path)
 
-    return {"preview_url": f"/uploads/thumbnails/{preview_filename}"}
+        f45 = os.path.join(thumb_dir, f"preview_{recipe_id}_45.jpg")
+        f95 = os.path.join(thumb_dir, f"preview_{recipe_id}_95.jpg")
+
+        ok45, ok95 = await asyncio.gather(
+            loop.run_in_executor(None, _extract_frame_at, 0.45, f45),
+            loop.run_in_executor(None, _extract_frame_at, 0.95, f95),
+        )
+        if not ok45 and not ok95:
+            raise HTTPException(status_code=422, detail="Could not extract frames from video.")
+
+    return {
+        "preview_45": f"/uploads/thumbnails/preview_{recipe_id}_45.jpg" if ok45 else None,
+        "preview_95": f"/uploads/thumbnails/preview_{recipe_id}_95.jpg" if ok95 else None,
+    }
 
 
 @router.delete("/{recipe_id}", status_code=204)

@@ -142,23 +142,30 @@
       </div>
 
       <!-- Recipe page scanner -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-icon">🔍</span>
-          <h2 class="card-title">Scan Recipe Page</h2>
+      <div style="position:relative;pointer-events:none;user-select:none">
+        <div class="card" style="filter:blur(3px)">
+          <div class="card-header">
+            <span class="card-icon">🔍</span>
+            <h2 class="card-title">Scan Recipe Page</h2>
+          </div>
+          <p class="card-desc">Paste a collection page, search results, or blog archive — we'll find all the recipes and let you pick which ones to import.</p>
+
+          <div class="input-group">
+            <label class="input-label">Page URL</label>
+            <input id="scan-url-input" type="url" placeholder="https://www.seriouseats.com/recipes" class="text-input" />
+          </div>
+
+          <button id="scan-page-btn" class="btn btn-purple btn-full">
+            <span class="btn-icon">🔍</span> Find Recipes on Page
+          </button>
+
+          <div id="scan-status" class="import-status hidden"></div>
         </div>
-        <p class="card-desc">Paste a collection page, search results, or blog archive — we'll find all the recipes and let you pick which ones to import.</p>
-
-        <div class="input-group">
-          <label class="input-label">Page URL</label>
-          <input id="scan-url-input" type="url" placeholder="https://www.seriouseats.com/recipes" class="text-input" />
+        <!-- WIP overlay -->
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border-radius:16px;overflow:hidden;background:repeating-linear-gradient(45deg,rgba(0,0,0,0.18) 0px,rgba(0,0,0,0.18) 10px,rgba(255,180,0,0.10) 10px,rgba(255,180,0,0.10) 20px)">
+          <div style="font-size:32px">🚧</div>
+          <div style="background:rgba(255,180,0,0.92);color:#1a1200;font-weight:700;font-size:13px;padding:4px 14px;border-radius:20px;letter-spacing:0.5px">Work in Progress</div>
         </div>
-
-        <button id="scan-page-btn" class="btn btn-purple btn-full" onclick="scanRecipePage()">
-          <span class="btn-icon">🔍</span> Find Recipes on Page
-        </button>
-
-        <div id="scan-status" class="import-status hidden"></div>
       </div>
 
       <!-- Photo import -->

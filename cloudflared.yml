@@ -1,0 +1,17 @@
+# Cloudflare Tunnel config for ReelRecipe
+# Tunnel ID and credentials-file are filled in after you create the tunnel
+# in the Cloudflare dashboard (Zero Trust → Networks → Tunnels)
+#
+# After creating the tunnel, replace YOUR_TUNNEL_ID below and set the
+# credentials file path (usually ~/.cloudflared/<tunnel-id>.json)
+
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /Users/BlairDalziel/.cloudflared/YOUR_TUNNEL_ID.json
+
+ingress:
+  - hostname: reelrecipe.ai
+    service: http://localhost:8000
+  - hostname: www.reelrecipe.ai
+    service: http://localhost:8000
+  # Catch-all — required by cloudflared
+  - service: http_status:404

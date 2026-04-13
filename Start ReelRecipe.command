@@ -58,10 +58,25 @@ LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/n
 
 echo "✅ Environment OK"
 echo ""
+
+# ── Start Cloudflare Tunnel (if configured) ────────────────────────────────
+TUNNEL_CONFIG="$SCRIPT_DIR/cloudflared.yml"
+TUNNEL_ACTIVE=false
+if command -v cloudflared &>/dev/null && [ -f "$TUNNEL_CONFIG" ] && ! grep -q "YOUR_TUNNEL_ID" "$TUNNEL_CONFIG"; then
+  echo "🌐 Starting Cloudflare Tunnel..."
+  cloudflared tunnel --config "$TUNNEL_CONFIG" run &>/tmp/reelrecipe-tunnel.log &
+  TUNNEL_PID=$!
+  sleep 2
+  TUNNEL_ACTIVE=true
+fi
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Backend API:  http://localhost:8000"
 echo " Phone URL:    http://$LOCAL_IP:8000"
 echo " API Docs:     http://localhost:8000/docs"
+if [ "$TUNNEL_ACTIVE" = true ]; then
+echo " Public URL:   https://reelrecipe.ai"
+fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo " Make sure your mobile .env points to:"

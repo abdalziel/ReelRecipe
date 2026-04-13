@@ -4,14 +4,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from config import settings
 from database import Base, engine
 from routers import reels, recipes, meal_plan, shopping_list, diet, instagram, public
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
 
-# Ensure directories exist
-os.makedirs("./uploads/thumbnails", exist_ok=True)
+# Ensure directories exist (works for both local and mounted volume paths)
+os.makedirs(os.path.join(settings.upload_dir, "thumbnails"), exist_ok=True)
 os.makedirs("./static", exist_ok=True)
 
 app = FastAPI(
@@ -31,7 +32,7 @@ app.add_middleware(
 )
 
 # Serve uploaded thumbnails
-app.mount("/uploads", StaticFiles(directory="./uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 # Serve dashboard static assets
 app.mount("/static", StaticFiles(directory="./static"), name="static")

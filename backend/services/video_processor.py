@@ -2,6 +2,7 @@
 Downloads Instagram reels via yt-dlp, extracts audio, transcribes with local Whisper.
 """
 import os
+import shutil
 import tempfile
 import asyncio
 from pathlib import Path
@@ -39,6 +40,8 @@ async def download_reel(url: str, output_dir: str) -> dict:
         "~/Documents/Claude/ReelRecipe/Cookies/www.instagram.com_cookies.txt"
     )
 
+    _ffmpeg = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
+
     ydl_opts = {
         "outtmpl": output_template,
         "format": "best[ext=mp4]/best",
@@ -46,6 +49,7 @@ async def download_reel(url: str, output_dir: str) -> dict:
         "no_warnings": True,
         "writeinfojson": False,
         "writethumbnail": True,
+        "ffmpeg_location": _ffmpeg,
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Referer": "https://www.instagram.com/",
@@ -87,6 +91,7 @@ async def download_reel(url: str, output_dir: str) -> dict:
             }
         ],
         "quiet": True,
+        "ffmpeg_location": _ffmpeg,
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Referer": "https://www.instagram.com/",

@@ -22,3 +22,4 @@ mobile/dist/
 # Credentials
 *.pem
 *.key
+Cookies/

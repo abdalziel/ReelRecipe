@@ -173,7 +173,11 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def get_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
-    _maybe_promote_admin(user, db)
+    # Re-fetch via our session so _maybe_promote_admin can commit changes to the same session
+    fresh = db.query(User).filter(User.id == user.id).first()
+    if fresh:
+        _maybe_promote_admin(fresh, db)
+        return _serialize_user(fresh)
     return _serialize_user(user)
 
 

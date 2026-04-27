@@ -279,6 +279,35 @@ function formatMealType(t) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+// Gradient palettes for food image placeholders (matches design tokens)
+const FOOD_PALETTES = [
+  ['#F59E0B','#DC2626','#7C2D12'],
+  ['#10B981','#059669','#064E3B'],
+  ['#F472B6','#9333EA','#3B0764'],
+  ['#FBBF24','#F97316','#7C2D12'],
+  ['#60A5FA','#1E3A8A','#0C1A4F'],
+  ['#FB923C','#B45309','#451A03'],
+];
+function foodGradient(seed) {
+  let h = 0; for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) | 0;
+  const [a, b, c] = FOOD_PALETTES[Math.abs(h) % FOOD_PALETTES.length];
+  return `radial-gradient(circle at 30% 20%, ${a} 0%, ${b} 45%, ${c} 100%)`;
+}
+
+function slotPill(mealType) {
+  if (!mealType) return '';
+  return `<span class="slot-pill ${mealType}">${formatMealType(mealType)}</span>`;
+}
+
+function macroChips(m) {
+  if (!m) return '';
+  const parts = [];
+  if (m.calories  != null) parts.push(`<span class="macro-item" style="color:var(--macro-cal)">${Math.round(m.calories)}<span class="macro-unit"> cal</span></span>`);
+  if (m.protein_g != null) parts.push(`<span class="macro-item" style="color:var(--macro-protein)">${Math.round(m.protein_g)}g<span class="macro-unit"> P</span></span>`);
+  if (m.carbs_g   != null) parts.push(`<span class="macro-item" style="color:var(--macro-carbs)">${Math.round(m.carbs_g)}g<span class="macro-unit"> C</span></span>`);
+  return parts.length ? `<div class="recipe-macros">${parts.join('')}</div>` : '';
+}
+
 // ── Tab Navigation ─────────────────────────────────────────────────────────
 
 function switchTab(tab) {
@@ -330,17 +359,19 @@ function renderGrid(recipes) {
   grid.innerHTML = recipes.map(r => {
     const thumb = thumbUrl(r.thumbnail_url);
     const thumbHtml = thumb
-      ? `<img src="${thumb}" class="recipe-thumb" alt="${r.title}" loading="lazy" onerror="this.parentNode.innerHTML='<div class=\'recipe-thumb-placeholder\'>🍽️</div>'">`
-      : `<div class="recipe-thumb-placeholder">🍽️</div>`;
-    const badge = r.meal_type ? `<span class="meal-badge ${r.meal_type}">${formatMealType(r.meal_type)}</span>` : '';
-    const macros = macroLine(r.macros_per_serving);
+      ? `<img src="${thumb}" class="recipe-thumb" alt="${escHtml(r.title)}" loading="lazy"
+           onerror="this.outerHTML='<div class=\\'recipe-thumb-placeholder\\'style=\\'background:${foodGradient(r.id)}\\'><div class=\\'recipe-thumb-overlay\\'></div></div>'">`
+      : `<div class="recipe-thumb-placeholder" style="background:${foodGradient(r.id)}"><div class="recipe-thumb-overlay"></div></div>`;
     return `
       <div class="recipe-card" onclick="openRecipe(${r.id})">
         ${thumbHtml}
         <div class="recipe-card-body">
           <div class="recipe-card-title">${escHtml(r.title)}</div>
-          <div class="recipe-card-meta">${badge}${r.cuisine ? `<span style="color:var(--text3);font-size:12px">${escHtml(r.cuisine)}</span>` : ''}</div>
-          ${macros ? `<div class="recipe-macros">${macros}</div>` : ''}
+          <div class="recipe-card-meta">
+            ${slotPill(r.meal_type)}
+            ${r.cuisine ? `<span style="color:var(--text3);font-size:11.5px;font-weight:500">${escHtml(r.cuisine)}</span>` : ''}
+          </div>
+          ${macroChips(r.macros_per_serving)}
         </div>
       </div>`;
   }).join('');
@@ -382,9 +413,20 @@ function activeChip() {
 // ── RECIPE MODAL ───────────────────────────────────────────────────────────
 
 const CATEGORY_COLORS = {
-  produce: '#16a34a', protein: '#dc2626', dairy: '#2563eb',
-  pantry: '#d97706', frozen: '#7c3aed', spice: '#db2777',
-  beverage: '#0891b2', other: '#475569',
+  produce:  '#34D399', protein: '#F87171', dairy:    '#60A5FA',
+  pantry:   '#FBBF24', frozen:  '#A78BFA', spice:    '#F472B6',
+  beverage: '#22D3EE', grain:   '#D6A86B', other:    '#94A3B8',
+};
+const CATEGORY_BG = {
+  produce:  'rgba(52,211,153,0.12)',  protein: 'rgba(248,113,113,0.12)',
+  dairy:    'rgba(96,165,250,0.12)',  pantry:  'rgba(251,191,36,0.12)',
+  frozen:   'rgba(167,139,250,0.12)', spice:   'rgba(244,114,182,0.12)',
+  beverage: 'rgba(34,211,238,0.12)', grain:   'rgba(214,168,107,0.12)',
+  other:    'rgba(148,163,184,0.12)',
+};
+const CATEGORY_EMOJI = {
+  produce: '🥬', protein: '🥩', dairy: '🥛', pantry: '📦',
+  frozen: '❄️', spice: '🌶️', beverage: '🥤', grain: '🌾', other: '•',
 };
 
 async function openRecipe(id) {
@@ -417,26 +459,33 @@ async function openRecipe(id) {
       r.servings  ? `<span class="meta-pill">🍽 Serves ${r.servings}</span>` : '',
     ].filter(Boolean).join('');
 
-    const macroHtml = r.macros_per_serving?.calories != null ? `
-      <div style="background:var(--surface);border-radius:12px;padding:16px">
+    const m = r.macros_per_serving;
+    const macroHtml = m?.calories != null ? `
+      <div style="background:var(--bg);border-radius:14px;padding:16px;border:1px solid var(--border)">
         <div class="modal-section-title">Per Serving</div>
         <div class="macro-grid">
-          <div class="macro-tile"><div class="macro-value" style="color:var(--accent)">${Math.round(r.macros_per_serving.calories)}</div><div class="macro-label">Calories</div></div>
-          ${r.macros_per_serving.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:#ef4444">${Math.round(r.macros_per_serving.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
-          ${r.macros_per_serving.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:#eab308">${Math.round(r.macros_per_serving.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
-          ${r.macros_per_serving.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:#3b82f6">${Math.round(r.macros_per_serving.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
+          <div class="macro-tile"><div class="macro-value" style="color:var(--macro-cal)">${Math.round(m.calories)}</div><div class="macro-label">Cal</div></div>
+          ${m.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-protein)">${Math.round(m.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
+          ${m.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-carbs)">${Math.round(m.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
+          ${m.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-fat)">${Math.round(m.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
         </div>
       </div>` : '';
 
-    const ingredients = r.ingredients.map(ing => `
-      <div class="ingredient-row">
-        <div class="ingredient-dot" style="background:${CATEGORY_COLORS[ing.category] || '#475569'}"></div>
-        <div class="ingredient-text">${escHtml(ing.raw_text || ing.name)}</div>
-      </div>`).join('');
+    const ingredients = r.ingredients.map(ing => {
+      const cat = ing.category || 'other';
+      const fg  = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
+      const bg  = CATEGORY_BG[cat]     || CATEGORY_BG.other;
+      const em  = CATEGORY_EMOJI[cat]  || '•';
+      return `
+        <div class="ingredient-row">
+          <div class="ingredient-icon" style="background:${bg};color:${fg}">${em}</div>
+          <div class="ingredient-text">${escHtml(ing.raw_text || ing.name)}</div>
+        </div>`;
+    }).join('');
 
     const steps = r.steps.map((s, i) => `
       <div class="step-row">
-        <div class="step-circle">${i + 1}</div>
+        <div class="step-circle${i === 0 ? ' step-first' : ''}">${i + 1}</div>
         <div class="step-text">${escHtml(s)}</div>
       </div>`).join('');
 
@@ -1451,10 +1500,10 @@ function renderDietDisplay(plan) {
       ${plan.diet_type ? `<div class="diet-plan-type">${escHtml(plan.diet_type)}</div>` : ''}
       ${plan.goals ? `<p style="color:var(--text2);font-size:14px;line-height:1.6;margin-bottom:16px">${escHtml(plan.goals)}</p>` : ''}
       <div class="macro-grid">
-        ${plan.daily_targets.calories != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--accent)">${Math.round(plan.daily_targets.calories)}</div><div class="macro-label">Calories/day</div></div>` : ''}
-        ${plan.daily_targets.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:#ef4444">${Math.round(plan.daily_targets.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
-        ${plan.daily_targets.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:#eab308">${Math.round(plan.daily_targets.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
-        ${plan.daily_targets.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:#3b82f6">${Math.round(plan.daily_targets.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
+        ${plan.daily_targets.calories != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-cal)">${Math.round(plan.daily_targets.calories)}</div><div class="macro-label">Cal/day</div></div>` : ''}
+        ${plan.daily_targets.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-protein)">${Math.round(plan.daily_targets.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
+        ${plan.daily_targets.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-carbs)">${Math.round(plan.daily_targets.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
+        ${plan.daily_targets.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-fat)">${Math.round(plan.daily_targets.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
       </div>
       ${mealRows ? `
         <div class="modal-section-title" style="margin-top:8px">Per-Meal Targets</div>
@@ -1684,15 +1733,21 @@ function renderDiscover(recipes) {
     const thumb = thumbUrl(r.thumbnail_url);
     const thumbHtml = thumb
       ? `<img class="recipe-thumb" src="${thumb}" alt="${escHtml(r.title)}" loading="lazy" />`
-      : `<div class="recipe-thumb-placeholder">🍽️</div>`;
-    const badge = r.meal_type ? `<span class="meal-badge ${escHtml(r.meal_type)}">${formatMealType(r.meal_type)}</span>` : '';
-    const macros = r.calories ? `<div class="recipe-macros">${Math.round(r.calories)} cal${r.protein_g ? ` · ${Math.round(r.protein_g)}g protein` : ''}</div>` : '';
+      : `<div class="recipe-thumb-placeholder" style="background:${foodGradient(r.id || r.title)}"><div class="recipe-thumb-overlay"></div></div>`;
+    const pubMacros = r.calories
+      ? `<div class="recipe-macros">
+           <span class="macro-item" style="color:var(--macro-cal)">${Math.round(r.calories)}<span class="macro-unit"> cal</span></span>
+           ${r.protein_g ? `<span class="macro-item" style="color:var(--macro-protein)">${Math.round(r.protein_g)}g<span class="macro-unit"> P</span></span>` : ''}
+         </div>` : '';
     return `<div class="public-recipe-card" onclick="viewPublicRecipe('${escHtml(r.id)}')" style="cursor:pointer">
       ${thumbHtml}
       <div class="recipe-card-body">
         <div class="recipe-card-title">${escHtml(r.title)}</div>
-        <div class="recipe-card-meta">${badge}${r.cuisine ? `<span style="color:var(--text3);font-size:11px">${escHtml(r.cuisine)}</span>` : ''}</div>
-        ${macros}
+        <div class="recipe-card-meta">
+          ${slotPill(r.meal_type)}
+          ${r.cuisine ? `<span style="color:var(--text3);font-size:11.5px;font-weight:500">${escHtml(r.cuisine)}</span>` : ''}
+        </div>
+        ${pubMacros}
       </div>
       <div class="public-card-footer" onclick="event.stopPropagation()">
         <button class="btn btn-primary btn-sm btn-full" data-pub-id="${escHtml(r.id)}" onclick="savePublicRecipe('${escHtml(r.id)}', this)">
@@ -1723,25 +1778,31 @@ function viewPublicRecipe(pubId) {
   ].filter(Boolean).join('');
 
   const macroHtml = r.calories != null ? `
-    <div style="background:var(--surface);border-radius:12px;padding:16px">
+    <div style="background:var(--bg);border-radius:14px;padding:16px;border:1px solid var(--border)">
       <div class="modal-section-title">Per Serving</div>
       <div class="macro-grid">
-        <div class="macro-tile"><div class="macro-value" style="color:var(--accent)">${Math.round(r.calories)}</div><div class="macro-label">Calories</div></div>
-        ${r.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:#ef4444">${Math.round(r.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
-        ${r.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:#eab308">${Math.round(r.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
-        ${r.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:#3b82f6">${Math.round(r.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
+        <div class="macro-tile"><div class="macro-value" style="color:var(--macro-cal)">${Math.round(r.calories)}</div><div class="macro-label">Cal</div></div>
+        ${r.protein_g != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-protein)">${Math.round(r.protein_g)}g</div><div class="macro-label">Protein</div></div>` : ''}
+        ${r.carbs_g   != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-carbs)">${Math.round(r.carbs_g)}g</div><div class="macro-label">Carbs</div></div>` : ''}
+        ${r.fat_g     != null ? `<div class="macro-tile"><div class="macro-value" style="color:var(--macro-fat)">${Math.round(r.fat_g)}g</div><div class="macro-label">Fat</div></div>` : ''}
       </div>
     </div>` : '';
 
-  const ingredients = (r.ingredients || []).map(ing => `
-    <div class="ingredient-row">
-      <div class="ingredient-dot" style="background:${CATEGORY_COLORS[ing.category] || '#475569'}"></div>
-      <div class="ingredient-text">${escHtml(ing.raw_text || ing.name)}</div>
-    </div>`).join('');
+  const ingredients = (r.ingredients || []).map(ing => {
+    const cat = ing.category || 'other';
+    const fg  = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
+    const bg  = CATEGORY_BG[cat]     || CATEGORY_BG.other;
+    const em  = CATEGORY_EMOJI[cat]  || '•';
+    return `
+      <div class="ingredient-row">
+        <div class="ingredient-icon" style="background:${bg};color:${fg}">${em}</div>
+        <div class="ingredient-text">${escHtml(ing.raw_text || ing.name)}</div>
+      </div>`;
+  }).join('');
 
   const steps = (r.steps || []).map((s, i) => `
     <div class="step-row">
-      <div class="step-circle">${i + 1}</div>
+      <div class="step-circle${i === 0 ? ' step-first' : ''}">${i + 1}</div>
       <div class="step-text">${escHtml(s)}</div>
     </div>`).join('');
 

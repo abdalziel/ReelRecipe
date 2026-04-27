@@ -1,17 +1,69 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from sqlalchemy import inspect, text
 
 from config import settings
-from database import Base, engine
-from routers import reels, recipes, meal_plan, shopping_list, diet, instagram, public
+from database import Base, engine, SessionLocal
+from routers import reels, recipes, meal_plan, shopping_list, diet, instagram, public, auth, admin
 
-# Create DB tables
+limiter = Limiter(key_func=get_remote_address)
+auth.router.limiter = limiter
+
+# Create DB tables (no-op for tables that already exist)
 Base.metadata.create_all(bind=engine)
 
-# Ensure directories exist (works for both local and mounted volume paths)
+# ── Schema migrations ─────────────────────────────────────────────────────
+# Add columns that may be missing from older deployments.
+
+_insp = inspect(engine)
+
+# recipes table
+if "recipes" in _insp.get_table_names():
+    _existing = {c["name"] for c in _insp.get_columns("recipes")}
+    for _col, _type in {"client_id": "VARCHAR(64)", "user_id": "INTEGER"}.items():
+        if _col not in _existing:
+            with engine.connect() as _c:
+                _c.execute(text(f"ALTER TABLE recipes ADD COLUMN {_col} {_type}"))
+                _c.commit()
+            try:
+                with engine.connect() as _c:
+                    _c.execute(text(
+                        f"CREATE INDEX IF NOT EXISTS ix_recipes_{_col} ON recipes ({_col})"
+                    ))
+                    _c.commit()
+            except Exception:
+                pass
+
+# users table
+if "users" in _insp.get_table_names():
+    _existing = {c["name"] for c in _insp.get_columns("users")}
+    if "is_admin" not in _existing:
+        with engine.connect() as _c:
+            _c.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+            _c.commit()
+
+# ── Promote admin account on startup ─────────────────────────────────────
+# If ADMIN_EMAIL is set and the account exists, ensure is_admin = True.
+
+if settings.admin_email:
+    try:
+        from models import User
+        with SessionLocal() as _db:
+            _admin = _db.query(User).filter(User.email == settings.admin_email).first()
+            if _admin and not _admin.is_admin:
+                _admin.is_admin = True
+                _db.commit()
+    except Exception:
+        pass
+
+# ── App setup ─────────────────────────────────────────────────────────────
+
 os.makedirs(os.path.join(settings.upload_dir, "thumbnails"), exist_ok=True)
 os.makedirs("./static", exist_ok=True)
 
@@ -19,9 +71,12 @@ app = FastAPI(
     title="ReelRecipe API",
     description="Instagram reel → recipe → meal plan → shopping list",
     version="1.0.0",
-    docs_url="/api-docs",   # move Swagger to /api-docs, free up / for dashboard
+    docs_url="/api-docs",
     redoc_url=None,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,13 +86,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve uploaded thumbnails
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
+app.mount("/static",  StaticFiles(directory="./static"),          name="static")
 
-# Serve dashboard static assets
-app.mount("/static", StaticFiles(directory="./static"), name="static")
-
-# Routers
+app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(reels.router)
 app.include_router(recipes.router)
 app.include_router(meal_plan.router)

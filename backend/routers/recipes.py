@@ -1,5 +1,4 @@
 import os
-import shutil
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel
@@ -8,6 +7,8 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from models import Recipe, Ingredient, RecipeIngredient
+from services.auth import Scope, get_scope, get_recipe_or_404
+from services import r2_storage
 
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"}
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -19,23 +20,24 @@ router = APIRouter(prefix="/api/recipes", tags=["recipes"])
 def list_recipes(
     meal_type: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Recipe)
+    q = scope.filter_recipes(db.query(Recipe))
     if meal_type:
         q = q.filter(Recipe.meal_type == meal_type)
     if search:
         q = q.filter(Recipe.title.ilike(f"%{search}%"))
-    recipes = q.order_by(Recipe.created_at.desc()).all()
-    return [_serialize_recipe(r) for r in recipes]
+    return [_serialize_recipe(r) for r in q.order_by(Recipe.created_at.desc()).all()]
 
 
 @router.get("/{recipe_id}")
-def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-    return _serialize_recipe(recipe)
+def get_recipe(
+    recipe_id: int,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    return _serialize_recipe(get_recipe_or_404(recipe_id, scope, db))
 
 
 class RecipeUpdate(BaseModel):
@@ -54,10 +56,13 @@ class RecipeUpdate(BaseModel):
 
 
 @router.patch("/{recipe_id}")
-def update_recipe(recipe_id: int, update: RecipeUpdate, db: Session = Depends(get_db)):
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+def update_recipe(
+    recipe_id: int,
+    update: RecipeUpdate,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    recipe = get_recipe_or_404(recipe_id, scope, db)
     for field, value in update.model_dump(exclude_none=True).items():
         setattr(recipe, field, value)
     db.commit()
@@ -70,12 +75,11 @@ async def update_thumbnail(
     recipe_id: int,
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """Replace the cover photo. Accepts either a file upload or a URL."""
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+    recipe = get_recipe_or_404(recipe_id, scope, db)
 
     if file and file.filename:
         content_type = (file.content_type or "").lower()
@@ -84,16 +88,31 @@ async def update_thumbnail(
         data = await file.read()
         if len(data) > _MAX_IMAGE_BYTES:
             raise HTTPException(status_code=400, detail="Image must be under 20 MB.")
-        thumb_dir = os.path.join(settings.upload_dir, "thumbnails")
-        os.makedirs(thumb_dir, exist_ok=True)
+
         ext = os.path.splitext(file.filename)[1] or ".jpg"
         filename = f"recipe_{recipe_id}_cover{ext}"
-        dest = os.path.join(thumb_dir, filename)
-        with open(dest, "wb") as f_out:
-            f_out.write(data)
-        recipe.thumbnail_url = f"/uploads/thumbnails/{filename}"
+
+        thumb_url = await r2_storage.upload_bytes(data, filename, content_type or "image/jpeg")
+        if not thumb_url:
+            thumb_dir = os.path.join(settings.upload_dir, "thumbnails")
+            os.makedirs(thumb_dir, exist_ok=True)
+            dest = os.path.join(thumb_dir, filename)
+            with open(dest, "wb") as f_out:
+                f_out.write(data)
+            thumb_url = f"/uploads/thumbnails/{filename}"
+
+        recipe.thumbnail_url = thumb_url
+
     elif url:
+        # If this is a local preview path (from thumbnail/from-reel), upload to R2
+        if url.startswith("/uploads/"):
+            rel = url[len("/uploads/"):]
+            local_path = os.path.join(settings.upload_dir, rel)
+            if os.path.exists(local_path):
+                r2_url = await r2_storage.upload_local_file(local_path)
+                url = r2_url or url
         recipe.thumbnail_url = url
+
     else:
         raise HTTPException(status_code=400, detail="Provide either a file or a URL.")
 
@@ -103,19 +122,19 @@ async def update_thumbnail(
 
 
 @router.post("/{recipe_id}/thumbnail/from-reel")
-async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
+async def thumbnail_from_reel(
+    recipe_id: int,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
     """
-    Download the reel at lowest quality, extract a frame at 45% duration via ffmpeg,
-    and save it as a preview file. Returns the preview URL WITHOUT updating the recipe
-    so the user can confirm before committing.
+    Download the reel at lowest quality, extract frames at 45% and 95% duration,
+    and return preview URLs. The caller confirms which frame to keep.
     """
     import asyncio, tempfile, subprocess, yt_dlp
     from pathlib import Path
-    from services.video_processor import _extract_mid_frame
 
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+    recipe = get_recipe_or_404(recipe_id, scope, db)
     if not recipe.source_url:
         raise HTTPException(status_code=422, detail="No source URL for this recipe.")
 
@@ -133,7 +152,7 @@ async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
             "quiet": True,
             "no_warnings": True,
             "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
                 "Referer": "https://www.instagram.com/",
             },
             **({"cookiefile": _cookies} if os.path.exists(_cookies) else {}),
@@ -150,16 +169,15 @@ async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"Could not download reel: {e}")
 
-        # Find the downloaded video file
         video_path = None
-        for f in Path(tmp).iterdir():
+        from pathlib import Path as _Path
+        for f in _Path(tmp).iterdir():
             if f.suffix.lower() in (".mp4", ".webm", ".mkv", ".mov"):
                 video_path = str(f)
                 break
         if not video_path:
             raise HTTPException(status_code=422, detail="No video file found after download.")
 
-        # Extract frames at 45% and 95%
         def _extract_frame_at(pct, out_path):
             seek = max(1, (duration or 12) * pct)
             result = subprocess.run(
@@ -186,10 +204,12 @@ async def thumbnail_from_reel(recipe_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{recipe_id}", status_code=204)
-def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+def delete_recipe(
+    recipe_id: int,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    recipe = get_recipe_or_404(recipe_id, scope, db)
     db.delete(recipe)
     db.commit()
 

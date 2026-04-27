@@ -34,6 +34,9 @@
       <button class="tab-btn" data-tab="discover">
         <span class="tab-icon">🌍</span> Discover
       </button>
+      <button class="tab-btn admin-tab hidden" data-tab="admin">
+        <span class="tab-icon">⚙️</span> Admin
+      </button>
     </nav>
     <select class="mobile-nav" id="mobile-nav" onchange="switchTab(this.value)">
       <option value="library">🗂 Library</option>
@@ -42,9 +45,72 @@
       <option value="shopping">🛒 Shopping</option>
       <option value="diet">🥗 Diet Goals</option>
       <option value="discover">🌍 Discover</option>
+      <option value="admin" class="admin-tab hidden">⚙️ Admin</option>
     </select>
+    <!-- Auth slot — replaced by JS based on session state -->
+    <div id="auth-slot" class="auth-slot">
+      <button class="btn btn-primary btn-sm" onclick="openAuthModal('login')">Sign In</button>
+    </div>
   </div>
 </header>
+
+<!-- ── Auth Modal ─────────────────────────────────────────────── -->
+<div id="auth-modal" class="modal-overlay hidden" onclick="closeAuthModal(event)">
+  <div class="modal auth-modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeAuthModal()">✕</button>
+    <div class="auth-brand">🍴 ReelRecipe</div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="auth-tab-login" onclick="switchAuthTab('login')">Sign In</button>
+      <button class="auth-tab" id="auth-tab-register" onclick="switchAuthTab('register')">Create Account</button>
+    </div>
+
+    <!-- Login -->
+    <div id="auth-login-pane">
+      <div class="input-group">
+        <label class="input-label">Email</label>
+        <input id="login-email" type="email" placeholder="you@example.com" class="text-input" autocomplete="email" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Password</label>
+        <input id="login-password" type="password" placeholder="••••••••" class="text-input" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')submitLogin()" />
+      </div>
+      <div id="login-error" class="auth-error hidden"></div>
+      <button id="login-btn" class="btn btn-primary btn-full" onclick="submitLogin()">Sign In</button>
+    </div>
+
+    <!-- Register -->
+    <div id="auth-register-pane" class="hidden">
+      <div class="input-group">
+        <label class="input-label">Name <span style="opacity:.5;font-weight:400">(optional)</span></label>
+        <input id="reg-name" type="text" placeholder="Your name" class="text-input" autocomplete="name" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Email</label>
+        <input id="reg-email" type="email" placeholder="you@example.com" class="text-input" autocomplete="email" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Password <span style="opacity:.5;font-weight:400">(min 8 chars)</span></label>
+        <input id="reg-password" type="password" placeholder="••••••••" class="text-input" autocomplete="new-password"
+               onkeydown="if(event.key==='Enter')submitRegister()" />
+      </div>
+      <div id="register-error" class="auth-error hidden"></div>
+      <button id="register-btn" class="btn btn-primary btn-full" onclick="submitRegister()">Create Account</button>
+      <p class="auth-fine-print">Free plan · unlimited recipes · no credit card required</p>
+    </div>
+
+    <button class="btn btn-ghost auth-skip" onclick="closeAuthModal()">Continue without an account →</button>
+  </div>
+</div>
+
+<!-- ── Account Dropdown ───────────────────────────────────────── -->
+<div id="account-dropdown" class="account-dropdown hidden">
+  <div id="account-dropdown-email" class="dropdown-email"></div>
+  <div id="account-dropdown-plan" class="dropdown-plan"></div>
+  <div class="dropdown-divider"></div>
+  <button class="dropdown-item" onclick="signOut()">Sign Out</button>
+</div>
 
 <!-- ── Main Content ───────────────────────────────────────── -->
 <main class="main">
@@ -439,6 +505,22 @@
 
     <div id="discover-grid" class="discover-grid">
       <div class="loading-state">Loading public recipes…</div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════
+       TAB: ADMIN
+  ═══════════════════════════════════════════════════════════ -->
+  <section id="tab-admin" class="tab-section">
+    <div class="section-header">
+      <h1 class="section-title">Admin Dashboard</h1>
+      <div class="header-actions">
+        <span id="admin-last-updated" style="color:var(--text3);font-size:12px"></span>
+        <button class="btn btn-ghost btn-sm" onclick="loadAdminStats()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="admin-content">
+      <div class="loading-state"><span class="spinner"></span> Loading stats…</div>
     </div>
   </section>
 

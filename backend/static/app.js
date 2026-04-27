@@ -2,6 +2,217 @@
 
 const API = '';  // same origin
 
+// ── Client identity ────────────────────────────────────────────────────────
+// Generates a persistent UUID per browser so each user has their own recipe library.
+const _clientId = (() => {
+  const KEY = 'rr_client_id';
+  let id = localStorage.getItem(KEY);
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem(KEY, id); }
+  return id;
+})();
+
+// ── Auth state ─────────────────────────────────────────────────────────────
+
+let _authUser   = null;   // { id, email, name, plan, status } | null
+let _authToken  = null;   // access JWT | null
+let _refreshTok = null;   // refresh JWT | null
+
+function _saveTokens(access, refresh) {
+  _authToken  = access;
+  _refreshTok = refresh || _refreshTok;
+  if (access)  localStorage.setItem('rr_access_token',  access);
+  else         localStorage.removeItem('rr_access_token');
+  if (refresh) localStorage.setItem('rr_refresh_token', refresh);
+}
+
+function _clearTokens() {
+  _authToken = _refreshTok = _authUser = null;
+  localStorage.removeItem('rr_access_token');
+  localStorage.removeItem('rr_refresh_token');
+}
+
+async function _tryRefresh() {
+  if (!_refreshTok) return false;
+  try {
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: _refreshTok }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    _saveTokens(data.access_token, null);
+    return true;
+  } catch { return false; }
+}
+
+async function _loadAuthUser() {
+  const res = await fetch('/api/auth/me', {
+    headers: { 'Authorization': `Bearer ${_authToken}` },
+  });
+  if (!res.ok) throw new Error('Not authenticated');
+  _authUser = await res.json();
+  _renderAuthSlot();
+}
+
+async function _initAuth() {
+  _authToken  = localStorage.getItem('rr_access_token');
+  _refreshTok = localStorage.getItem('rr_refresh_token');
+  if (!_authToken) return;
+  try {
+    await _loadAuthUser();
+  } catch {
+    // Access token expired — try refresh
+    const ok = await _tryRefresh();
+    if (ok) {
+      try { await _loadAuthUser(); } catch { _clearTokens(); }
+    } else {
+      _clearTokens();
+    }
+  }
+}
+
+// ── Auth UI ────────────────────────────────────────────────────────────────
+
+function _renderAuthSlot() {
+  const slot = document.getElementById('auth-slot');
+  if (!slot) return;
+
+  // Show/hide admin tab based on is_admin
+  document.querySelectorAll('.admin-tab').forEach(el => {
+    el.classList.toggle('hidden', !(_authUser?.is_admin));
+  });
+
+  if (_authUser) {
+    const initial = (_authUser.name || _authUser.email)[0].toUpperCase();
+    const plan    = _authUser.plan === 'pro' ? 'Pro' : 'Free';
+    const planCls = _authUser.plan === 'pro' ? 'plan-badge pro' : 'plan-badge free';
+    slot.innerHTML = `
+      <button class="account-btn" onclick="toggleAccountDropdown(event)">
+        <div class="account-avatar">${initial}</div>
+        <span class="account-name">${escHtml(_authUser.name || _authUser.email.split('@')[0])}</span>
+        <span class="${planCls}">${plan}</span>
+      </button>`;
+    const dd = document.getElementById('account-dropdown');
+    if (dd) {
+      document.getElementById('account-dropdown-email').textContent = _authUser.email;
+      document.getElementById('account-dropdown-plan').textContent  = `Plan: ${plan}`;
+    }
+  } else {
+    slot.innerHTML = `<button class="btn btn-primary btn-sm" onclick="openAuthModal('login')">Sign In</button>`;
+  }
+}
+
+function toggleAccountDropdown(e) {
+  e.stopPropagation();
+  const dd = document.getElementById('account-dropdown');
+  if (!dd) return;
+  dd.classList.toggle('hidden');
+  const btn = document.querySelector('.account-btn');
+  if (btn) {
+    const rect = btn.getBoundingClientRect();
+    dd.style.top   = (rect.bottom + 8) + 'px';
+    dd.style.right = (window.innerWidth - rect.right) + 'px';
+  }
+}
+document.addEventListener('click', () => {
+  document.getElementById('account-dropdown')?.classList.add('hidden');
+});
+
+function openAuthModal(tab = 'login') {
+  document.getElementById('auth-modal').classList.remove('hidden');
+  switchAuthTab(tab);
+}
+function closeAuthModal(e) {
+  if (e && e.target !== e.currentTarget && e.type !== 'click') return;
+  if (e && e.currentTarget && e.target !== e.currentTarget) return;
+  document.getElementById('auth-modal').classList.add('hidden');
+}
+function switchAuthTab(tab) {
+  document.getElementById('auth-login-pane').classList.toggle('hidden',    tab !== 'login');
+  document.getElementById('auth-register-pane').classList.toggle('hidden', tab !== 'register');
+  document.getElementById('auth-tab-login').classList.toggle('active',    tab === 'login');
+  document.getElementById('auth-tab-register').classList.toggle('active', tab === 'register');
+  document.getElementById('login-error').classList.add('hidden');
+  document.getElementById('register-error').classList.add('hidden');
+}
+
+function _authBtnLoading(btnId, loading, label) {
+  const btn = document.getElementById(btnId);
+  btn.disabled = loading;
+  btn.innerHTML = loading ? '<span class="spinner"></span>' : label;
+}
+
+async function _afterAuth(data) {
+  _saveTokens(data.access_token, data.refresh_token);
+  _authUser = data.user;
+  _renderAuthSlot();
+  document.getElementById('auth-modal').classList.add('hidden');
+  // Claim any anonymous recipes into the new account
+  try {
+    const claimed = await api('/api/auth/claim-anonymous', {
+      method: 'POST',
+      body: JSON.stringify({ client_id: _clientId }),
+    });
+    if (claimed?.claimed > 0) showToast(`${claimed.claimed} recipe${claimed.claimed > 1 ? 's' : ''} moved to your account.`);
+  } catch {}
+  loadLibrary();
+}
+
+async function submitLogin() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('login-error');
+  errEl.classList.add('hidden');
+  if (!email || !password) { errEl.textContent = 'Enter your email and password.'; errEl.classList.remove('hidden'); return; }
+  _authBtnLoading('login-btn', true, 'Sign In');
+  try {
+    const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    await _afterAuth(data);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    _authBtnLoading('login-btn', false, 'Sign In');
+  }
+}
+
+async function submitRegister() {
+  const name     = document.getElementById('reg-name').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const errEl    = document.getElementById('register-error');
+  errEl.classList.add('hidden');
+  if (!email || !password) { errEl.textContent = 'Email and password are required.'; errEl.classList.remove('hidden'); return; }
+  _authBtnLoading('register-btn', true, 'Create Account');
+  try {
+    const data = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) });
+    await _afterAuth(data);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    _authBtnLoading('register-btn', false, 'Create Account');
+  }
+}
+
+function signOut() {
+  _clearTokens();
+  _renderAuthSlot();
+  document.getElementById('account-dropdown')?.classList.add('hidden');
+  loadLibrary();
+}
+
+// Simple toast notification
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('toast-show'));
+  setTimeout(() => { t.classList.remove('toast-show'); setTimeout(() => t.remove(), 300); }, 3500);
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 let allRecipes   = [];
 let mealPlan     = null;
@@ -15,11 +226,31 @@ let pickerTarget = null;   // { dayIndex, slot }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async function api(path, opts = {}) {
-  const res = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json', ...opts.headers },
-    ...opts,
-  });
+// Returns the right auth header for direct fetch() calls (non-JSON, e.g. FormData)
+function _authHeaders() {
+  if (_authToken) return { 'Authorization': `Bearer ${_authToken}` };
+  return { 'X-Client-ID': _clientId };
+}
+
+async function api(path, opts = {}, _retry = false) {
+  const headers = { 'Content-Type': 'application/json', ...opts.headers };
+  if (_authToken) {
+    headers['Authorization'] = `Bearer ${_authToken}`;
+  } else {
+    headers['X-Client-ID'] = _clientId;
+  }
+  const res = await fetch(API + path, { headers, ...opts });
+
+  // On 401, attempt a token refresh once then retry
+  if (res.status === 401 && _authToken && !_retry && path !== '/api/auth/refresh') {
+    const ok = await _tryRefresh();
+    if (ok) return api(path, opts, true);
+    _clearTokens();
+    _renderAuthSlot();
+    openAuthModal('login');
+    throw new Error('Session expired — please sign in again.');
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || 'Request failed');
@@ -65,6 +296,7 @@ function switchTab(tab) {
   if (tab === 'diet')     loadDietPlan();
   if (tab === 'import')   checkBulkStatus();
   if (tab === 'discover') loadDiscover();
+  if (tab === 'admin')    loadAdminStats();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -319,7 +551,7 @@ async function confirmReelThumbnail(recipeId, previewUrl) {
   const fd = new FormData();
   fd.append('url', previewUrl);
   try {
-    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd });
+    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd, headers: _authHeaders() });
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
     const data = await res.json();
     _refreshModalHero(data.thumbnail_url);
@@ -334,7 +566,7 @@ async function uploadCoverPhoto(recipeId, input) {
   const fd = new FormData();
   fd.append('file', file);
   try {
-    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd });
+    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd, headers: _authHeaders() });
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
     const data = await res.json();
     _refreshModalHero(data.thumbnail_url);
@@ -349,7 +581,7 @@ async function saveCoverUrl(recipeId) {
   const fd = new FormData();
   fd.append('url', url);
   try {
-    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd });
+    const res = await fetch(`/api/recipes/${recipeId}/thumbnail`, { method: 'PATCH', body: fd, headers: _authHeaders() });
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
     const data = await res.json();
     _refreshModalHero(data.thumbnail_url);
@@ -482,7 +714,7 @@ async function importPhotoRecipe(event) {
   formData.append('file', file);
 
   try {
-    const resp = await fetch('/api/reels/import-photo', { method: 'POST', body: formData });
+    const resp = await fetch('/api/reels/import-photo', { method: 'POST', body: formData, headers: _authHeaders() });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ detail: resp.statusText }));
       throw new Error(err.detail || resp.statusText);
@@ -1613,10 +1845,164 @@ async function savePublicRecipe(pubId, btn) {
   }
 }
 
+// ── ADMIN DASHBOARD ────────────────────────────────────────────────────────
+
+async function loadAdminStats() {
+  const el = document.getElementById('admin-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading stats…</div>';
+  try {
+    const d = await api('/api/admin/stats');
+    document.getElementById('admin-last-updated').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+    el.innerHTML = _renderAdminDashboard(d);
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">${e.message}</div></div>`;
+  }
+}
+
+function _adminStatCard(label, value, sub = '') {
+  return `<div class="admin-stat-card">
+    <div class="admin-stat-value">${value}</div>
+    <div class="admin-stat-label">${label}</div>
+    ${sub ? `<div class="admin-stat-sub">${sub}</div>` : ''}
+  </div>`;
+}
+
+function _adminBar(label, count, total, color = 'var(--accent)') {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  return `<div class="admin-bar-row">
+    <div class="admin-bar-label">${escHtml(label)}</div>
+    <div class="admin-bar-track">
+      <div class="admin-bar-fill" style="width:${pct}%;background:${color}"></div>
+    </div>
+    <div class="admin-bar-count">${count}</div>
+  </div>`;
+}
+
+function _renderAdminDashboard(d) {
+  const u = d.users;
+  const r = d.recipes;
+
+  const thumbPct = r.total > 0 ? Math.round((r.with_thumbnail / r.total) * 100) : 0;
+  const activePct = u.total > 0 ? Math.round((u.active / u.total) * 100) : 0;
+
+  // Source type colours
+  const srcColors = {
+    instagram_reel:  '#e1306c',
+    web_recipe:      '#2563eb',
+    photo:           '#7c3aed',
+    public_library:  '#16a34a',
+    unknown:         '#64748b',
+  };
+
+  const srcTotal = Object.values(r.by_source).reduce((a, b) => a + b, 0);
+  const srcBars  = Object.entries(r.by_source)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => _adminBar(k.replace('_', ' '), v, srcTotal, srcColors[k] || 'var(--accent)'))
+    .join('');
+
+  const mealTotal = Object.values(r.by_meal_type).reduce((a, b) => a + b, 0);
+  const mealColors = { breakfast: '#f59e0b', lunch: '#3b82f6', dinner: '#8b5cf6', snack: '#10b981' };
+  const mealBars = Object.entries(r.by_meal_type)
+    .map(([k, v]) => _adminBar(k, v, mealTotal, mealColors[k] || 'var(--accent)'))
+    .join('');
+
+  const cuisineBars = r.top_cuisines.length
+    ? r.top_cuisines.map(c => _adminBar(c.name, c.count, r.top_cuisines[0].count, '#0891b2')).join('')
+    : '<div style="color:var(--text3);font-size:13px">No data yet</div>';
+
+  const planTotal = Object.values(u.by_plan).reduce((a, b) => a + b, 0);
+  const planBars  = Object.entries(u.by_plan)
+    .map(([k, v]) => _adminBar(k, v, planTotal, k === 'pro' ? 'var(--accent)' : 'var(--text3)'))
+    .join('');
+
+  const fmtDate = iso => {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const recentSignups = d.recent_signups.map(s => `
+    <div class="admin-activity-row">
+      <div class="admin-activity-avatar">${(s.name || s.email)[0].toUpperCase()}</div>
+      <div>
+        <div class="admin-activity-title">${escHtml(s.name || s.email.split('@')[0])}</div>
+        <div class="admin-activity-sub">${escHtml(s.email)}</div>
+      </div>
+      <div class="admin-activity-time">${fmtDate(s.joined)}</div>
+    </div>`).join('') || '<div style="color:var(--text3);font-size:13px">No signups yet</div>';
+
+  const sourceIcon = { instagram_reel: '📹', web_recipe: '🌐', photo: '📸', public_library: '🌍' };
+  const recentRecipes = d.recent_recipes.map(r => `
+    <div class="admin-activity-row">
+      <div class="admin-activity-icon">${sourceIcon[r.source] || '📄'}</div>
+      <div style="flex:1;min-width:0">
+        <div class="admin-activity-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.title)}</div>
+        <div class="admin-activity-sub">${(r.source || '').replace('_', ' ')}</div>
+      </div>
+      <div class="admin-activity-time">${fmtDate(r.added)}</div>
+    </div>`).join('') || '<div style="color:var(--text3);font-size:13px">No recipes yet</div>';
+
+  return `
+  <!-- Top stat cards -->
+  <div class="admin-stat-grid">
+    ${_adminStatCard('Total Users', u.total, `${u.new_7d} this week · ${u.new_30d} this month`)}
+    ${_adminStatCard('Active Users', u.active, `${activePct}% have recipes`)}
+    ${_adminStatCard('Total Recipes', r.total, `${r.new_7d} this week · ${r.new_30d} this month`)}
+    ${_adminStatCard('Public Library', d.public_library.total, 'Federated across all users')}
+    ${_adminStatCard('Avg Recipes / User', r.avg_per_active_user, 'Among users with recipes')}
+    ${_adminStatCard('Thumbnails', `${thumbPct}%`, `${r.with_thumbnail} of ${r.total} recipes`)}
+  </div>
+
+  <!-- Three-column breakdown -->
+  <div class="admin-panels">
+    <div class="admin-panel">
+      <div class="admin-panel-title">Recipe Source</div>
+      ${srcBars || '<div style="color:var(--text3);font-size:13px">No data yet</div>'}
+    </div>
+    <div class="admin-panel">
+      <div class="admin-panel-title">Meal Types</div>
+      ${mealBars || '<div style="color:var(--text3);font-size:13px">No data yet</div>'}
+    </div>
+    <div class="admin-panel">
+      <div class="admin-panel-title">Top Cuisines</div>
+      ${cuisineBars}
+    </div>
+  </div>
+
+  <!-- Ownership + plans -->
+  <div class="admin-panels">
+    <div class="admin-panel">
+      <div class="admin-panel-title">Ownership</div>
+      ${_adminBar('Authenticated', r.auth_owned, r.total, '#16a34a')}
+      ${_adminBar('Anonymous', r.anon_owned, r.total, '#64748b')}
+    </div>
+    <div class="admin-panel">
+      <div class="admin-panel-title">Plans</div>
+      ${planBars || '<div style="color:var(--text3);font-size:13px">No memberships yet</div>'}
+    </div>
+    <div class="admin-panel" style="grid-column:span 1"></div>
+  </div>
+
+  <!-- Recent activity -->
+  <div class="admin-panels" style="grid-template-columns:1fr 1fr">
+    <div class="admin-panel">
+      <div class="admin-panel-title">Recent Sign-ups</div>
+      ${recentSignups}
+    </div>
+    <div class="admin-panel">
+      <div class="admin-panel-title">Recent Recipes Added</div>
+      ${recentRecipes}
+    </div>
+  </div>`;
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 
-loadLibrary();
-loadDietPlan();
-checkBulkStatus();
-// Pre-load recipes for meal planner picker
-api('/api/recipes').then(r => { allRecipes = r; }).catch(() => {});
+_initAuth().then(() => {
+  loadLibrary();
+  loadDietPlan();
+  checkBulkStatus();
+  // Pre-load recipes for meal planner picker
+  api('/api/recipes').then(r => { allRecipes = r; }).catch(() => {});
+});

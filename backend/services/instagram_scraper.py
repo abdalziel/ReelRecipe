@@ -24,6 +24,7 @@ from models import Recipe, Ingredient, RecipeIngredient
 from services.recipe_extractor import extract_recipe_from_reel, NoRecipeFoundError
 from services.duplicate_detector import find_duplicate
 from services.video_processor import transcribe_audio
+from services import r2_storage
 
 _haiku = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
@@ -241,6 +242,8 @@ async def run_bulk_import(
     db: Session,
     collection_url: Optional[str] = None,
     limit: Optional[int] = None,
+    client_id: Optional[str] = None,
+    user_id: Optional[int] = None,
 ):
     """
     Full bulk import pipeline. Runs as a background async task.
@@ -454,16 +457,18 @@ async def run_bulk_import(
                     shutil.rmtree(tmp_dir, ignore_errors=True)
                     continue
 
-                # Copy thumbnail to permanent storage
+                # Upload thumbnail to R2; fall back to local disk
                 thumb_url = None
                 if thumbnail_path and os.path.exists(thumbnail_path):
-                    thumb_dir = os.path.join(settings.upload_dir, "thumbnails")
-                    os.makedirs(thumb_dir, exist_ok=True)
-                    thumb_filename = f"{shortcode}{Path(thumbnail_path).suffix}"
-                    shutil.copy2(thumbnail_path, os.path.join(thumb_dir, thumb_filename))
-                    thumb_url = f"/uploads/thumbnails/{thumb_filename}"
+                    thumb_url = await r2_storage.upload_local_file(thumbnail_path)
+                    if not thumb_url:
+                        thumb_dir = os.path.join(settings.upload_dir, "thumbnails")
+                        os.makedirs(thumb_dir, exist_ok=True)
+                        thumb_filename = f"{shortcode}{Path(thumbnail_path).suffix}"
+                        shutil.copy2(thumbnail_path, os.path.join(thumb_dir, thumb_filename))
+                        thumb_url = f"/uploads/thumbnails/{thumb_filename}"
 
-                # Persist recipe
+                # Persist recipe — prefer user_id (authenticated) over client_id (anonymous)
                 recipe = Recipe(
                     title=recipe_data["title"],
                     description=recipe_data.get("description"),
@@ -471,6 +476,8 @@ async def run_bulk_import(
                     source_type="instagram_reel",
                     thumbnail_url=thumb_url,
                     transcript=transcript,
+                    user_id=user_id,
+                    client_id=client_id if not user_id else None,
                     servings=recipe_data.get("servings", 2),
                     prep_time_minutes=recipe_data.get("prep_time_minutes"),
                     cook_time_minutes=recipe_data.get("cook_time_minutes"),

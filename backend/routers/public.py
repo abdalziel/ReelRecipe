@@ -9,6 +9,7 @@ from database import get_db
 from models import Recipe, Ingredient, RecipeIngredient
 from services.public_library import search, get_all, get_by_id
 from services.duplicate_detector import find_duplicate
+from services.auth import Scope, get_scope
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
@@ -20,7 +21,11 @@ async def browse_public(q: str = "", meal_type: str = ""):
 
 
 @router.post("/recipes/{pub_id}/save")
-async def save_to_library(pub_id: str, db: Session = Depends(get_db)):
+async def save_to_library(
+    pub_id: str,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
     """
     Copy a public recipe into the user's personal library.
     Returns 409 with the usual corny message if it's already saved.
@@ -57,6 +62,7 @@ async def save_to_library(pub_id: str, db: Session = Depends(get_db)):
         protein_g=pub_recipe.get("protein_g"),
         carbs_g=pub_recipe.get("carbs_g"),
         fat_g=pub_recipe.get("fat_g"),
+        **scope.recipe_owner_kwargs(),
     )
     db.add(recipe)
     db.flush()

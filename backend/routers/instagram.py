@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from services.instagram_scraper import run_bulk_import, get_job_status, submit_2fa_code, request_cancel, _current_job
+from services.auth import Scope, get_scope
 
 router = APIRouter(prefix="/api/instagram", tags=["instagram"])
 
@@ -18,14 +19,15 @@ router = APIRouter(prefix="/api/instagram", tags=["instagram"])
 class BulkImportRequest(BaseModel):
     username: str
     password: str
-    collection_url: Optional[str] = None  # e.g. https://www.instagram.com/{user}/saved/{name}/
-    limit: Optional[int] = None  # None = import all saved reels
+    collection_url: Optional[str] = None
+    limit: Optional[int] = None
 
 
 @router.post("/bulk-import")
 async def start_bulk_import(
     payload: BulkImportRequest,
     background_tasks: BackgroundTasks,
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     if _current_job["status"] == "running":
@@ -38,6 +40,8 @@ async def start_bulk_import(
         db=db,
         collection_url=payload.collection_url,
         limit=payload.limit,
+        user_id=scope.user_id,
+        client_id=scope.client_id if not scope.user_id else None,
     )
 
     return {"message": "Bulk import started", "status": "running"}

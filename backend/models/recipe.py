@@ -5,6 +5,7 @@ from sqlalchemy.orm import relationship
 from database import Base
 
 
+
 class Recipe(Base):
     __tablename__ = "recipes"
 
@@ -33,6 +34,9 @@ class Recipe(Base):
     carbs_g = Column(Float, nullable=True)
     fat_g = Column(Float, nullable=True)
 
+    client_id = Column(String(64), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -41,6 +45,7 @@ class Recipe(Base):
         "RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan"
     )
     meal_plan_entries = relationship("MealPlanEntry", back_populates="recipe")
+    owner = relationship("User", back_populates="recipes")
 
 
 class Ingredient(Base):

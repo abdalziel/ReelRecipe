@@ -119,4 +119,10 @@ def dashboard():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "1.0.3"}
+    ae = settings.admin_email
+    return {
+        "status": "ok",
+        "version": "1.0.4",
+        "admin_email_set": bool(ae),
+        "admin_email_preview": (ae[:3] + "***" + ae[ae.find("@"):]) if ae and "@" in ae else ("(set, no @)" if ae else "(not set)"),
+    }

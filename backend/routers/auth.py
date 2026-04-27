@@ -187,17 +187,18 @@ def update_me(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
+    fresh = db.query(User).filter(User.id == user.id).first()
     if payload.name is not None:
         stripped = payload.name.strip()
         if stripped:
-            user.name = stripped
-    if payload.email is not None and payload.email != user.email:
-        if db.query(User).filter(User.email == payload.email, User.id != user.id).first():
+            fresh.name = stripped
+    if payload.email is not None and payload.email != fresh.email:
+        if db.query(User).filter(User.email == payload.email, User.id != fresh.id).first():
             raise HTTPException(status_code=409, detail="That email is already in use.")
-        user.email = payload.email
+        fresh.email = payload.email
     db.commit()
-    db.refresh(user)
-    return _serialize_user(user)
+    db.refresh(fresh)
+    return _serialize_user(fresh)
 
 
 @router.post("/change-password")
@@ -206,13 +207,35 @@ def change_password(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    if not user.password_hash or not verify_password(payload.current_password, user.password_hash):
+    fresh = db.query(User).filter(User.id == user.id).first()
+    if not fresh.password_hash or not verify_password(payload.current_password, fresh.password_hash):
         raise HTTPException(status_code=401, detail="Current password is incorrect.")
     if len(payload.new_password) < 8:
         raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")
-    user.password_hash = hash_password(payload.new_password)
+    fresh.password_hash = hash_password(payload.new_password)
     db.commit()
     return {"message": "Password changed successfully."}
+
+
+@router.post("/claim-admin")
+def claim_admin(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Self-promote to admin if the caller's email matches ADMIN_EMAIL."""
+    from config import settings as _s
+    if not _s.admin_email:
+        raise HTTPException(status_code=403, detail="No admin email configured on this server.")
+    fresh = db.query(User).filter(User.id == user.id).first()
+    if fresh.email.lower() != _s.admin_email.strip().lower():
+        raise HTTPException(status_code=403, detail="Your email does not match the configured admin email.")
+    fresh.is_admin = True
+    m = fresh.membership
+    if m:
+        m.plan = "pro"
+        m.status = "active"
+    else:
+        db.add(Membership(user_id=fresh.id, plan="pro", status="active"))
+    db.commit()
+    db.refresh(fresh)
+    return _serialize_user(fresh)
 
 
 @router.post("/claim-anonymous")

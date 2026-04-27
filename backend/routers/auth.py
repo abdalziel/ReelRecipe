@@ -51,6 +51,16 @@ class ClaimRequest(BaseModel):
     client_id: str
 
 
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _token_response(user: User) -> dict:
@@ -137,6 +147,40 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 @router.get("/me")
 def get_me(user: User = Depends(require_user)):
     return _serialize_user(user)
+
+
+@router.patch("/me")
+def update_me(
+    payload: UpdateProfileRequest,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    if payload.name is not None:
+        stripped = payload.name.strip()
+        if stripped:
+            user.name = stripped
+    if payload.email is not None and payload.email != user.email:
+        if db.query(User).filter(User.email == payload.email, User.id != user.id).first():
+            raise HTTPException(status_code=409, detail="That email is already in use.")
+        user.email = payload.email
+    db.commit()
+    db.refresh(user)
+    return _serialize_user(user)
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    if not user.password_hash or not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"message": "Password changed successfully."}
 
 
 @router.post("/claim-anonymous")

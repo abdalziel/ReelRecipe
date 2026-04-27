@@ -92,6 +92,31 @@ def _ensure_membership(user: User, db: Session) -> None:
         db.commit()
 
 
+def _maybe_promote_admin(user: User, db: Session) -> None:
+    """If this user's email matches ADMIN_EMAIL, ensure they have is_admin=True and plan=pro."""
+    from config import settings as _s
+    if not _s.admin_email:
+        return
+    if user.email.lower() != _s.admin_email.strip().lower():
+        return
+    changed = False
+    if not user.is_admin:
+        user.is_admin = True
+        changed = True
+    m = user.membership
+    if m:
+        if m.plan != "pro":
+            m.plan = "pro"
+            m.status = "active"
+            changed = True
+    else:
+        db.add(Membership(user_id=user.id, plan="pro", status="active"))
+        changed = True
+    if changed:
+        db.commit()
+        db.refresh(user)
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────
 
 @router.post("/register")
@@ -103,15 +128,16 @@ def register(request: Request, payload: RegisterRequest, db: Session = Depends(g
         raise HTTPException(status_code=409, detail="An account with that email already exists.")
 
     from config import settings as _s
+    is_admin = bool(_s.admin_email and payload.email.lower() == _s.admin_email.strip().lower())
     user = User(
         email=payload.email,
         name=payload.name or payload.email.split("@")[0],
         password_hash=hash_password(payload.password),
-        is_admin=bool(_s.admin_email and payload.email.lower() == _s.admin_email.lower()),
+        is_admin=is_admin,
     )
     db.add(user)
     db.flush()
-    db.add(Membership(user_id=user.id, plan="free", status="active"))
+    db.add(Membership(user_id=user.id, plan="pro" if is_admin else "free", status="active"))
     db.commit()
     db.refresh(user)
     return _token_response(user)
@@ -128,6 +154,7 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled.")
     _ensure_membership(user, db)
+    _maybe_promote_admin(user, db)
     return _token_response(user)
 
 
@@ -145,7 +172,8 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def get_me(user: User = Depends(require_user)):
+def get_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    _maybe_promote_admin(user, db)
     return _serialize_user(user)
 
 

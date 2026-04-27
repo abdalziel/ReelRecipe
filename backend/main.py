@@ -53,14 +53,26 @@ if "users" in _insp.get_table_names():
 
 if settings.admin_email:
     try:
-        from models import User
+        import sys
+        from models import User, Membership
         with SessionLocal() as _db:
-            _admin = _db.query(User).filter(User.email == settings.admin_email).first()
-            if _admin and not _admin.is_admin:
+            _admin = _db.query(User).filter(
+                User.email.ilike(settings.admin_email.strip())
+            ).first()
+            if _admin:
                 _admin.is_admin = True
+                if _admin.membership:
+                    _admin.membership.plan = "pro"
+                    _admin.membership.status = "active"
+                else:
+                    _db.add(Membership(user_id=_admin.id, plan="pro", status="active"))
                 _db.commit()
-    except Exception:
-        pass
+                print(f"[startup] Admin promoted: {_admin.email}", file=sys.stderr)
+            else:
+                print(f"[startup] Admin account not found: {settings.admin_email}", file=sys.stderr)
+    except Exception as _e:
+        import sys
+        print(f"[startup] Admin promotion error: {_e}", file=sys.stderr)
 
 # ── App setup ─────────────────────────────────────────────────────────────
 

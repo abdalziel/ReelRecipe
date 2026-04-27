@@ -1169,8 +1169,9 @@ html, body {
   font-size: 10px; font-weight: 700; letter-spacing: .05em;
   padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
 }
-.plan-badge.free { background: var(--surface2); color: var(--text3); }
-.plan-badge.pro  { background: linear-gradient(135deg,#f97316,#ea580c); color: #fff; }
+.plan-badge.free  { background: var(--surface2); color: var(--text3); }
+.plan-badge.pro   { background: linear-gradient(135deg,#f97316,#ea580c); color: #fff; }
+.plan-badge.admin { background: linear-gradient(135deg,#8b5cf6,#6d28d9); color: #fff; }
 
 /* ── Account dropdown ────────────────────────────────────────── */
 .account-dropdown {

@@ -112,7 +112,49 @@
   <div id="account-dropdown-email" class="dropdown-email"></div>
   <div id="account-dropdown-plan" class="dropdown-plan"></div>
   <div class="dropdown-divider"></div>
+  <button class="dropdown-item" onclick="openEditAccount()">✏️ Edit Account</button>
   <button class="dropdown-item" onclick="signOut()">Sign Out</button>
+</div>
+
+<!-- ── Edit Account Modal ──────────────────────────────────── -->
+<div id="edit-account-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeEditAccount()">
+  <div class="modal" style="max-width:440px;padding:28px" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeEditAccount()">✕</button>
+    <h2 style="font-size:20px;font-weight:800;margin-bottom:20px">Edit Account</h2>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="input-group">
+        <label class="input-label">Name</label>
+        <input id="ea-name" type="text" class="text-input" placeholder="Your name" autocomplete="name" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Email</label>
+        <input id="ea-email" type="email" class="text-input" placeholder="you@example.com" autocomplete="email" />
+      </div>
+      <div id="ea-error" class="auth-error hidden"></div>
+      <button id="ea-save-btn" class="btn btn-primary btn-full" onclick="submitEditAccount()">Save Changes</button>
+    </div>
+
+    <details style="margin-top:20px">
+      <summary style="cursor:pointer;font-size:13px;color:var(--text2);font-weight:600;user-select:none">Change Password</summary>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+        <div class="input-group">
+          <label class="input-label">Current password</label>
+          <input id="ea-cur-pw" type="password" class="text-input" placeholder="••••••••" />
+        </div>
+        <div class="input-group">
+          <label class="input-label">New password <span style="opacity:.5;font-weight:400">(min 8 chars)</span></label>
+          <input id="ea-new-pw" type="password" class="text-input" placeholder="••••••••" />
+        </div>
+        <div class="input-group">
+          <label class="input-label">Confirm new password</label>
+          <input id="ea-confirm-pw" type="password" class="text-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')submitChangePassword()" />
+        </div>
+        <div id="ea-pw-error" class="auth-error hidden"></div>
+        <button id="ea-pw-btn" class="btn btn-ghost btn-full" onclick="submitChangePassword()">Change Password</button>
+      </div>
+    </details>
+  </div>
 </div>
 
 <!-- ── Main Content ───────────────────────────────────────── -->

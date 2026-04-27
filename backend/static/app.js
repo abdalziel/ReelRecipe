@@ -85,8 +85,9 @@ function _renderAuthSlot() {
 
   if (_authUser) {
     const initial = (_authUser.name || _authUser.email)[0].toUpperCase();
-    const plan    = _authUser.plan === 'pro' ? 'Pro' : 'Free';
-    const planCls = _authUser.plan === 'pro' ? 'plan-badge pro' : 'plan-badge free';
+    const isAdmin = _authUser.is_admin;
+    const plan    = isAdmin ? 'Admin' : (_authUser.plan === 'pro' ? 'Pro' : 'Free');
+    const planCls = isAdmin ? 'plan-badge admin' : (_authUser.plan === 'pro' ? 'plan-badge pro' : 'plan-badge free');
     slot.innerHTML = `
       <button class="account-btn" onclick="toggleAccountDropdown(event)">
         <div class="account-avatar">${initial}</div>
@@ -96,7 +97,7 @@ function _renderAuthSlot() {
     const dd = document.getElementById('account-dropdown');
     if (dd) {
       document.getElementById('account-dropdown-email').textContent = _authUser.email;
-      document.getElementById('account-dropdown-plan').textContent  = `Plan: ${plan}`;
+      document.getElementById('account-dropdown-plan').textContent  = isAdmin ? 'Administrator' : `Plan: ${plan}`;
     }
   } else {
     slot.innerHTML = `<button class="btn btn-primary btn-sm" onclick="openAuthModal('login')">Sign In</button>`;
@@ -201,6 +202,75 @@ function signOut() {
   _renderAuthSlot();
   document.getElementById('account-dropdown')?.classList.add('hidden');
   loadLibrary();
+}
+
+function openEditAccount() {
+  document.getElementById('account-dropdown')?.classList.add('hidden');
+  document.getElementById('ea-name').value  = _authUser?.name  ?? '';
+  document.getElementById('ea-email').value = _authUser?.email ?? '';
+  document.getElementById('ea-error').classList.add('hidden');
+  document.getElementById('ea-pw-error').classList.add('hidden');
+  document.getElementById('ea-cur-pw').value = '';
+  document.getElementById('ea-new-pw').value = '';
+  document.getElementById('ea-confirm-pw').value = '';
+  document.getElementById('edit-account-modal').classList.remove('hidden');
+}
+function closeEditAccount() {
+  document.getElementById('edit-account-modal').classList.add('hidden');
+}
+
+async function submitEditAccount() {
+  const name  = document.getElementById('ea-name').value.trim();
+  const email = document.getElementById('ea-email').value.trim();
+  const errEl = document.getElementById('ea-error');
+  errEl.classList.add('hidden');
+  if (!name || !email) { errEl.textContent = 'Name and email are required.'; errEl.classList.remove('hidden'); return; }
+
+  const body = {};
+  if (name  !== _authUser.name)  body.name  = name;
+  if (email !== _authUser.email) body.email = email;
+  if (!Object.keys(body).length) { closeEditAccount(); return; }
+
+  const btn = document.getElementById('ea-save-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const updated = await api('/api/auth/me', { method: 'PATCH', body: JSON.stringify(body) });
+    _authUser = { ..._authUser, ...updated };
+    _renderAuthSlot();
+    closeEditAccount();
+    showToast('Account updated.');
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Changes';
+  }
+}
+
+async function submitChangePassword() {
+  const cur     = document.getElementById('ea-cur-pw').value;
+  const newPw   = document.getElementById('ea-new-pw').value;
+  const confirm = document.getElementById('ea-confirm-pw').value;
+  const errEl   = document.getElementById('ea-pw-error');
+  errEl.classList.add('hidden');
+  if (!cur || !newPw) { errEl.textContent = 'Enter your current and new password.'; errEl.classList.remove('hidden'); return; }
+  if (newPw !== confirm) { errEl.textContent = 'New passwords do not match.'; errEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('ea-pw-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    await api('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password: cur, new_password: newPw }) });
+    document.getElementById('ea-cur-pw').value = '';
+    document.getElementById('ea-new-pw').value = '';
+    document.getElementById('ea-confirm-pw').value = '';
+    showToast('Password changed successfully.');
+    closeEditAccount();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Change Password';
+  }
 }
 
 // Simple toast notification

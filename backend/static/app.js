@@ -613,6 +613,17 @@ async function openRecipe(id) {
 
     const tags = r.tags?.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${r.tags.map(t => `<span class="restriction-tag">#${escHtml(t)}</span>`).join('')}</div>` : '';
 
+    const ratingHtml = _authUser ? (() => {
+      const cur = r.user_rating || '';
+      return `
+        <div class="rating-row" id="rating-row-${r.id}" data-current="${escHtml(cur)}">
+          <span class="rating-label">Rate</span>
+          <button class="rating-btn${cur === 'dislike' ? ' active-dislike' : ''}" data-rating="dislike" onclick="rateRecipe(${r.id},'dislike')">👎 Dislike</button>
+          <button class="rating-btn${cur === 'like'    ? ' active-like'    : ''}" data-rating="like"    onclick="rateRecipe(${r.id},'like')">👍 Like</button>
+          <button class="rating-btn${cur === 'love'    ? ' active-love'    : ''}" data-rating="love"    onclick="rateRecipe(${r.id},'love')">❤️ Love</button>
+        </div>`;
+    })() : '';
+
     content.innerHTML = `
       ${heroHtml}
       <div class="modal-body">
@@ -621,6 +632,7 @@ async function openRecipe(id) {
           ${r.description ? `<div class="modal-desc" style="margin-top:6px">${escHtml(r.description)}</div>` : ''}
         </div>
         <div class="modal-meta">${pills}</div>
+        ${ratingHtml}
         ${macroHtml}
         <div>
           <div class="modal-section-title">Ingredients</div>
@@ -793,6 +805,37 @@ async function deleteRecipe(id) {
   await api(`/api/recipes/${id}`, { method: 'DELETE' });
   closeRecipeModal();
   loadLibrary(document.getElementById('search-input').value, activeChip());
+}
+
+async function rateRecipe(recipeId, rating) {
+  const row = document.getElementById(`rating-row-${recipeId}`);
+  if (!row) return;
+  const current = row.dataset.current;
+  try {
+    if (current === rating) {
+      // Toggle off — unrate
+      await api(`/api/recipes/${recipeId}/rate`, { method: 'DELETE' });
+      row.dataset.current = '';
+    } else {
+      const res = await api(`/api/recipes/${recipeId}/rate`, {
+        method: 'POST',
+        body: JSON.stringify({ rating }),
+      });
+      row.dataset.current = res.user_rating;
+    }
+    _updateRatingButtons(row);
+  } catch (e) {
+    if (e.message.includes('Sign in')) openAuthModal('login');
+    else showToast('Could not save rating: ' + e.message);
+  }
+}
+
+function _updateRatingButtons(row) {
+  const current = row.dataset.current;
+  row.querySelectorAll('.rating-btn').forEach(btn => {
+    const r = btn.dataset.rating;
+    btn.className = 'rating-btn' + (current === r ? ` active-${r}` : '');
+  });
 }
 
 // ── SINGLE REEL IMPORT ─────────────────────────────────────────────────────
@@ -1834,11 +1877,51 @@ let _discoverMealFilter = '';
 async function loadDiscover() {
   const grid = document.getElementById('discover-grid');
   const count = document.getElementById('discover-count');
+  const forYouSection = document.getElementById('discover-for-you');
   grid.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading public recipes…</div>';
+
   try {
-    const data = await api('/api/public/recipes');
-    _discoverAll = data.recipes || [];
+    // Load personalized recommendations and full library in parallel
+    const [recs, allData] = await Promise.all([
+      _authUser ? api('/api/public/recommended').catch(() => null) : Promise.resolve(null),
+      api('/api/public/recipes'),
+    ]);
+    _discoverAll = allData.recipes || [];
     count.textContent = `${_discoverAll.length} recipes`;
+
+    // Show "For You" section if we have personalized picks
+    if (forYouSection && recs?.personalized && recs.recipes?.length) {
+      forYouSection.innerHTML = `
+        <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-weight:600;margin-bottom:10px">
+          ✨ For You
+        </div>
+        <div class="recipe-grid" style="margin-bottom:0">${
+          recs.recipes.map(r => {
+            const thumb = thumbUrl(r.thumbnail_url);
+            const thumbHtml = thumb
+              ? `<img class="recipe-thumb" src="${thumb}" alt="${escHtml(r.title)}" loading="lazy" />`
+              : `<div class="recipe-thumb-placeholder" style="background:${foodGradient(r.id || r.title)}"><div class="recipe-thumb-overlay"></div></div>`;
+            return `<div class="public-recipe-card" onclick="viewPublicRecipe('${escHtml(r.id)}')" style="cursor:pointer">
+              ${thumbHtml}
+              <div class="recipe-card-body">
+                <div class="recipe-card-title">${escHtml(r.title)}</div>
+                <div class="recipe-card-meta">${slotPill(r.meal_type)}${r.cuisine ? `<span style="color:var(--text3);font-size:11.5px;font-weight:500">${escHtml(r.cuisine)}</span>` : ''}</div>
+              </div>
+              <div class="public-card-footer" onclick="event.stopPropagation()">
+                <button class="btn btn-primary btn-sm btn-full" onclick="savePublicRecipe('${escHtml(r.id)}', this)">+ Save to My Library</button>
+              </div>
+            </div>`;
+          }).join('')
+        }</div>
+        <div style="height:1px;background:var(--border);margin:20px 0 4px"></div>
+        <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-weight:600;margin-bottom:10px">
+          All Recipes
+        </div>`;
+      forYouSection.classList.remove('hidden');
+    } else if (forYouSection) {
+      forYouSection.classList.add('hidden');
+    }
+
     renderDiscover(_discoverAll);
   } catch (e) {
     grid.innerHTML = `<div class="loading-state" style="color:var(--red)">Could not load public recipes.</div>`;

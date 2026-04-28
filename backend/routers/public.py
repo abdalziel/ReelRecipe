@@ -6,12 +6,57 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Recipe, Ingredient, RecipeIngredient
+from models import Recipe, Ingredient, RecipeIngredient, RecipeRating
 from services.public_library import search, get_all, get_by_id
 from services.duplicate_detector import find_duplicate
 from services.auth import Scope, get_scope
 
 router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+@router.get("/recommended")
+async def recommended_recipes(
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    """Return up to 20 public recipes personalized to the user's taste from liked/loved ratings."""
+    preferred_meal_types: set[str] = set()
+    preferred_cuisines: set[str] = set()
+
+    if scope.user:
+        ratings = db.query(RecipeRating).filter(
+            RecipeRating.user_id == scope.user.id,
+            RecipeRating.rating.in_(["like", "love"]),
+        ).all()
+        recipe_ids = [r.recipe_id for r in ratings]
+        if recipe_ids:
+            liked = db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
+            for rec in liked:
+                if rec.meal_type:
+                    preferred_meal_types.add(rec.meal_type)
+                if rec.cuisine:
+                    preferred_cuisines.add(rec.cuisine)
+
+    all_public = await get_all()
+
+    if not preferred_meal_types and not preferred_cuisines:
+        return {"recipes": all_public[:20], "personalized": False}
+
+    scored = []
+    for pub in all_public:
+        score = 0
+        if pub.get("meal_type") in preferred_meal_types:
+            score += 2
+        if pub.get("cuisine") in preferred_cuisines:
+            score += 1
+        scored.append((score, pub))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = [pub for score, pub in scored if score > 0][:20]
+    if not top:
+        top = all_public[:20]
+
+    return {"recipes": top, "personalized": bool(preferred_meal_types or preferred_cuisines)}
 
 
 @router.get("/recipes")
@@ -35,7 +80,8 @@ async def save_to_library(
         raise HTTPException(status_code=404, detail="Public recipe not found.")
 
     ing_names = [i.get("name", "") for i in pub_recipe.get("ingredients", [])]
-    dup = find_duplicate(pub_recipe["title"], ing_names, db)
+    dup = find_duplicate(pub_recipe["title"], ing_names, db,
+                         base_query=scope.filter_recipes(db.query(Recipe)))
     if dup:
         raise HTTPException(
             status_code=409,

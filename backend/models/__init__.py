@@ -3,6 +3,7 @@ from .recipe import Recipe, Ingredient, RecipeIngredient
 from .meal_plan import MealPlan, MealPlanEntry
 from .shopping_list import ShoppingList, ShoppingListItem
 from .diet_plan import DietPlan
+from .rating import RecipeRating
 
 __all__ = [
     "User",
@@ -15,4 +16,5 @@ __all__ = [
     "ShoppingList",
     "ShoppingListItem",
     "DietPlan",
+    "RecipeRating",
 ]

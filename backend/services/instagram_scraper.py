@@ -449,7 +449,12 @@ async def run_bulk_import(
 
                 # Content-based duplicate check (catches same recipe from a different URL)
                 ing_names = [i["name"] for i in recipe_data.get("ingredients", [])]
-                dup = find_duplicate(recipe_data["title"], ing_names, db)
+                _dup_q = db.query(Recipe)
+                if user_id:
+                    _dup_q = _dup_q.filter(Recipe.user_id == user_id)
+                elif client_id:
+                    _dup_q = _dup_q.filter(Recipe.client_id == client_id)
+                dup = find_duplicate(recipe_data["title"], ing_names, db, base_query=_dup_q)
                 if dup:
                     _log(f"😋  Looks like you were so hungry you wanted it twice! \"{dup.title}\" is already in your library.")
                     _current_job["skipped"] += 1

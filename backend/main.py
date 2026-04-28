@@ -126,7 +126,7 @@ def health():
     ae = settings.admin_email
     return {
         "status": "ok",
-        "version": "1.0.4",
+        "version": "1.0.5",
         "admin_email_set": bool(ae),
         "admin_email_preview": (ae[:3] + "***" + ae[ae.find("@"):]) if ae and "@" in ae else ("(set, no @)" if ae else "(not set)"),
     }

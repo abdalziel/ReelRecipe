@@ -23,6 +23,7 @@ def find_duplicate(
     title: str,
     ingredient_names: list,
     db: Session,
+    base_query=None,
 ) -> Optional[Recipe]:
     """
     Return an existing Recipe that is semantically the same as the given
@@ -31,11 +32,13 @@ def find_duplicate(
     Duplicate criteria (either condition triggers a match):
       1. Title similarity >= 82%
       2. Title similarity >= 50% AND ingredient name overlap >= 60%
+
+    Pass base_query to scope the search (e.g. scope.filter_recipes(db.query(Recipe))).
     """
     norm_title = _norm(title)
     new_ings = {_norm(n) for n in ingredient_names if n.strip()}
 
-    for recipe in db.query(Recipe).all():
+    for recipe in (base_query or db.query(Recipe)).all():
         title_sim = difflib.SequenceMatcher(
             None, norm_title, _norm(recipe.title)
         ).ratio()

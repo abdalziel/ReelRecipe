@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
-from models import Recipe, Ingredient, RecipeIngredient
-from services.auth import Scope, get_scope, get_recipe_or_404
+from models import Recipe, Ingredient, RecipeIngredient, RecipeRating
+from services.auth import Scope, get_scope, get_recipe_or_404, require_user
 from services import r2_storage
 
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"}
@@ -28,7 +28,9 @@ def list_recipes(
         q = q.filter(Recipe.meal_type == meal_type)
     if search:
         q = q.filter(Recipe.title.ilike(f"%{search}%"))
-    return [_serialize_recipe(r) for r in q.order_by(Recipe.created_at.desc()).all()]
+    recipes = q.order_by(Recipe.created_at.desc()).all()
+    ratings = _get_user_ratings(scope, db)
+    return [_serialize_recipe(r, ratings.get(r.id)) for r in recipes]
 
 
 @router.get("/{recipe_id}")
@@ -37,7 +39,9 @@ def get_recipe(
     scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
-    return _serialize_recipe(get_recipe_or_404(recipe_id, scope, db))
+    r = get_recipe_or_404(recipe_id, scope, db)
+    ratings = _get_user_ratings(scope, db)
+    return _serialize_recipe(r, ratings.get(r.id))
 
 
 class RecipeUpdate(BaseModel):
@@ -67,7 +71,8 @@ def update_recipe(
         setattr(recipe, field, value)
     db.commit()
     db.refresh(recipe)
-    return _serialize_recipe(recipe)
+    ratings = _get_user_ratings(scope, db)
+    return _serialize_recipe(recipe, ratings.get(recipe.id))
 
 
 @router.patch("/{recipe_id}/thumbnail")
@@ -214,7 +219,60 @@ def delete_recipe(
     db.commit()
 
 
-def _serialize_recipe(recipe: Recipe) -> dict:
+def _get_user_ratings(scope: Scope, db: Session) -> dict:
+    if not scope.user:
+        return {}
+    rows = db.query(RecipeRating).filter(RecipeRating.user_id == scope.user.id).all()
+    return {r.recipe_id: r.rating for r in rows}
+
+
+class RateBody(BaseModel):
+    rating: str  # dislike | like | love
+
+
+@router.post("/{recipe_id}/rate")
+def rate_recipe(
+    recipe_id: int,
+    body: RateBody,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    if not scope.user:
+        raise HTTPException(status_code=401, detail="Sign in to rate recipes.")
+    if body.rating not in {"dislike", "like", "love"}:
+        raise HTTPException(status_code=400, detail="rating must be dislike, like, or love")
+    get_recipe_or_404(recipe_id, scope, db)
+    user_id = scope.user.id
+    existing = db.query(RecipeRating).filter(
+        RecipeRating.user_id == user_id,
+        RecipeRating.recipe_id == recipe_id,
+    ).first()
+    if existing:
+        existing.rating = body.rating
+    else:
+        db.add(RecipeRating(user_id=user_id, recipe_id=recipe_id, rating=body.rating))
+    db.commit()
+    return {"user_rating": body.rating}
+
+
+@router.delete("/{recipe_id}/rate", status_code=204)
+def unrate_recipe(
+    recipe_id: int,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    if not scope.user:
+        raise HTTPException(status_code=401, detail="Sign in to rate recipes.")
+    existing = db.query(RecipeRating).filter(
+        RecipeRating.user_id == scope.user.id,
+        RecipeRating.recipe_id == recipe_id,
+    ).first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+
+
+def _serialize_recipe(recipe: Recipe, user_rating: Optional[str] = None) -> dict:
     return {
         "id": recipe.id,
         "title": recipe.title,
@@ -247,6 +305,7 @@ def _serialize_recipe(recipe: Recipe) -> dict:
             }
             for ri in recipe.recipe_ingredients
         ],
+        "user_rating": user_rating,
         "created_at": recipe.created_at.isoformat(),
         "updated_at": recipe.updated_at.isoformat(),
     }

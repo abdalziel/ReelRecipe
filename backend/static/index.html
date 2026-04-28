@@ -35,7 +35,7 @@
         <span class="tab-icon">🥗</span> Diet Goals
       </button>
       <button class="tab-btn" data-tab="discover">
-        <span class="tab-icon">🌍</span> Discover
+        <span class="tab-icon">🌍</span> Explore
       </button>
       <button class="tab-btn admin-tab hidden" data-tab="admin">
         <span class="tab-icon">⚙️</span> Admin
@@ -47,7 +47,7 @@
       <option value="planner">📅 Meal Plan</option>
       <option value="shopping">🛒 Shopping</option>
       <option value="diet">🥗 Diet Goals</option>
-      <option value="discover">🌍 Discover</option>
+      <option value="discover">🌍 Explore</option>
       <option value="admin" class="admin-tab hidden">⚙️ Admin</option>
     </select>
     <!-- Auth slot — replaced by JS based on session state -->
@@ -551,7 +551,7 @@
   ═══════════════════════════════════════════════════════════ -->
   <section id="tab-discover" class="tab-section">
     <div class="section-header">
-      <h1 class="section-title">Discover Recipes</h1>
+      <h1 class="section-title">Explore</h1>
       <span id="discover-count" class="badge"></span>
     </div>
 
@@ -572,6 +572,7 @@
       <button class="chip" data-type="dessert" onclick="setDiscoverFilter(this, 'dessert')">Dessert</button>
     </div>
 
+    <div id="discover-for-you" class="hidden"></div>
     <div id="discover-grid" class="discover-grid">
       <div class="loading-state">Loading public recipes…</div>
     </div>

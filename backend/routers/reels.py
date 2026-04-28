@@ -158,7 +158,8 @@ async def process_reel(
     _auto_publish(recipe_data, thumb_url)
 
     ingredient_names = [i["name"] for i in recipe_data.get("ingredients", [])]
-    dup = find_duplicate(recipe_data["title"], ingredient_names, db)
+    dup = find_duplicate(recipe_data["title"], ingredient_names, db,
+                         base_query=scope.filter_recipes(db.query(Recipe)))
     if dup:
         raise _duplicate_error(dup)
 
@@ -203,7 +204,8 @@ async def import_web_recipe(
     _auto_publish(recipe_data, content.get("image"))
 
     ingredient_names = [i["name"] for i in recipe_data.get("ingredients", [])]
-    dup = find_duplicate(recipe_data["title"], ingredient_names, db)
+    dup = find_duplicate(recipe_data["title"], ingredient_names, db,
+                         base_query=scope.filter_recipes(db.query(Recipe)))
     if dup:
         raise _duplicate_error(dup)
 
@@ -267,7 +269,8 @@ async def import_photo_recipe(
     _auto_publish(recipe_data)
 
     ingredient_names = [i["name"] for i in recipe_data.get("ingredients", [])]
-    dup = find_duplicate(recipe_data["title"], ingredient_names, db)
+    dup = find_duplicate(recipe_data["title"], ingredient_names, db,
+                         base_query=scope.filter_recipes(db.query(Recipe)))
     if dup:
         raise _duplicate_error(dup)
 

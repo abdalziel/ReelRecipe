@@ -1176,15 +1176,17 @@ html, body {
 }
 
 /* Password reveal row */
-.pw-reveal-wrap { position: relative; display: flex; align-items: center; }
-.pw-reveal-wrap .text-input { flex: 1; padding-right: 40px; }
+.pw-reveal-wrap { position: relative; }
+.pw-reveal-wrap .text-input { width: 100%; padding-right: 44px; box-sizing: border-box; }
 .pw-reveal-btn {
-  position: absolute; right: 10px;
+  position: absolute; top: 50%; right: 12px; transform: translateY(-50%);
+  z-index: 2;
   background: none; border: none; cursor: pointer;
-  color: var(--text3); font-size: 16px; padding: 0; line-height: 1;
+  color: var(--text3); padding: 4px; line-height: 0;
   transition: color .15s;
 }
-.pw-reveal-btn:hover { color: var(--text2); }
+.pw-reveal-btn:hover { color: var(--text); }
+.pw-reveal-btn svg { display: block; }
 
 /* Avatar upload */
 .avatar-upload-wrap { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }

@@ -79,7 +79,7 @@
         <div class="pw-reveal-wrap">
           <input id="login-password" type="password" placeholder="••••••••" class="text-input" autocomplete="current-password"
                  onkeydown="if(event.key==='Enter')submitLogin()" />
-          <button type="button" class="pw-reveal-btn" onclick="togglePwReveal('login-password',this)" tabindex="-1">👁</button>
+          <button type="button" class="pw-reveal-btn" onclick="togglePwReveal('login-password',this)" tabindex="-1" aria-label="Show password"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
         </div>
       </div>
       <div id="login-error" class="auth-error hidden"></div>
@@ -101,7 +101,7 @@
         <div class="pw-reveal-wrap">
           <input id="reg-password" type="password" placeholder="••••••••" class="text-input" autocomplete="new-password"
                  onkeydown="if(event.key==='Enter')submitRegister()" />
-          <button type="button" class="pw-reveal-btn" onclick="togglePwReveal('reg-password',this)" tabindex="-1">👁</button>
+          <button type="button" class="pw-reveal-btn" onclick="togglePwReveal('reg-password',this)" tabindex="-1" aria-label="Show password"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
         </div>
       </div>
       <div id="register-error" class="auth-error hidden"></div>

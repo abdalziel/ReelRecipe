@@ -8,8 +8,10 @@ venv/
 # Database
 backend/recipereel.db
 
-# Uploads (user content)
+# Uploads (user content) — thumbnails are committed for web access
 backend/uploads/
+!backend/uploads/thumbnails/
+!backend/uploads/thumbnails/**
 
 # macOS
 .DS_Store

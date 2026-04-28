@@ -567,11 +567,7 @@ async function openRecipe(id) {
         padding:6px 12px;font-size:12px;cursor:pointer;backdrop-filter:blur(4px);
         display:flex;align-items:center;gap:5px;
       ">📷 Change cover</button>
-      <div id="cover-editor-${r.id}" class="hidden" data-source-type="${escHtml(r.source_type || '')}" style="
-        position:absolute;inset:0;background:rgba(0,0,0,.78);
-        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
-        backdrop-filter:blur(6px);border-radius:inherit;padding:16px;overflow-y:auto;
-      "></div>
+      <div id="cover-editor-${r.id}" class="hidden" data-source-type="${escHtml(r.source_type || '')}"></div>
     </div>`;
     const totalTime = (r.prep_time_minutes || 0) + (r.cook_time_minutes || 0);
     const pills = [
@@ -654,42 +650,62 @@ async function openRecipe(id) {
 // ── Cover photo editor ─────────────────────────────────────────────────────
 
 function openCoverEditor(recipeId) {
-  const editor = document.getElementById(`cover-editor-${recipeId}`);
-  const isReel = editor.dataset.sourceType === 'instagram_reel';
-  editor.innerHTML = `
-    <div style="color:#fff;font-weight:600;font-size:13px;letter-spacing:.03em;opacity:.85">CHANGE COVER PHOTO</div>
+  const anchor = document.getElementById(`cover-editor-${recipeId}`);
+  const isReel = anchor.dataset.sourceType === 'instagram_reel';
+
+  // Build a fixed full-screen overlay so it's never clipped by the hero height
+  const overlayId = `cover-overlay-${recipeId}`;
+  let overlay = document.getElementById(overlayId);
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = overlayId;
+    overlay.style.cssText = `
+      position:fixed;inset:0;z-index:1200;
+      background:rgba(0,0,0,.82);backdrop-filter:blur(8px);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:14px;padding:32px 24px;overflow-y:auto;
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  overlay.innerHTML = `
+    <div style="color:#fff;font-weight:700;font-size:14px;letter-spacing:.06em;opacity:.9;text-transform:uppercase">Change Cover Photo</div>
     ${isReel ? `
     <button onclick="extractReelThumbnail(${recipeId}, this)" style="
-      background:#e1306c;color:#fff;border:none;border-radius:8px;
-      padding:8px 18px;cursor:pointer;font-size:13px;font-weight:600;
+      background:#e1306c;color:#fff;border:none;border-radius:10px;
+      padding:10px 22px;cursor:pointer;font-size:13px;font-weight:600;
     ">📹 Extract from Reel</button>
-    <div style="color:rgba(255,255,255,.4);font-size:11px">— or —</div>` : ''}
+    <div style="color:rgba(255,255,255,.35);font-size:11px">— or —</div>` : ''}
     <label style="
-      background:var(--accent);color:#fff;padding:8px 18px;border-radius:8px;
-      cursor:pointer;font-size:13px;font-weight:600;
+      background:var(--accent);color:#fff;padding:10px 22px;border-radius:10px;
+      cursor:pointer;font-size:13px;font-weight:600;display:inline-block;
     ">📤 Upload Photo<input type="file" accept="image/*" style="display:none" onchange="uploadCoverPhoto(${recipeId}, this)"></label>
-    <div style="color:rgba(255,255,255,.4);font-size:11px">— or —</div>
-    <div style="display:flex;gap:6px">
+    <div style="color:rgba(255,255,255,.35);font-size:11px">— or —</div>
+    <div style="display:flex;gap:8px;width:100%;max-width:320px">
       <input id="cover-url-${recipeId}" type="url" placeholder="Paste image URL…" style="
-        width:180px;padding:7px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);
-        background:rgba(255,255,255,.1);color:#fff;font-size:12px;
+        flex:1;padding:9px 12px;border-radius:9px;border:1px solid rgba(255,255,255,.2);
+        background:rgba(255,255,255,.1);color:#fff;font-size:13px;
       ">
       <button onclick="saveCoverUrl(${recipeId})" style="
-        background:var(--accent);color:#fff;border:none;border-radius:8px;
-        padding:7px 14px;cursor:pointer;font-size:12px;font-weight:600;
+        background:var(--accent);color:#fff;border:none;border-radius:9px;
+        padding:9px 16px;cursor:pointer;font-size:13px;font-weight:600;flex-shrink:0;
       ">Save</button>
     </div>
     <button onclick="closeCoverEditor(${recipeId})" style="
-      color:rgba(255,255,255,.45);background:none;border:none;cursor:pointer;font-size:12px;
+      color:rgba(255,255,255,.45);background:none;border:none;cursor:pointer;
+      font-size:13px;margin-top:4px;
     ">Cancel</button>`;
-  editor.classList.remove('hidden');
+
+  overlay.classList.remove('hidden');
+  overlay.style.display = 'flex';
 }
+
 function closeCoverEditor(recipeId) {
-  document.getElementById(`cover-editor-${recipeId}`).classList.add('hidden');
+  const overlay = document.getElementById(`cover-overlay-${recipeId}`);
+  if (overlay) overlay.style.display = 'none';
 }
 
 async function extractReelThumbnail(recipeId, btn) {
-  const editor = document.getElementById(`cover-editor-${recipeId}`);
   btn.disabled = true;
   btn.textContent = '⏳ Downloading & extracting…';
   try {
@@ -700,28 +716,29 @@ async function extractReelThumbnail(recipeId, btn) {
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
         <div style="color:rgba(255,255,255,.6);font-size:11px;font-weight:600;letter-spacing:.05em">${label}</div>
         <img src="${url}?t=${t}" style="
-          width:120px;height:90px;object-fit:cover;border-radius:8px;
+          width:140px;height:105px;object-fit:cover;border-radius:10px;
           box-shadow:0 4px 14px rgba(0,0,0,.5);
         ">
         <button onclick="confirmReelThumbnail(${recipeId}, '${url}')" style="
-          background:#22c55e;color:#fff;border:none;border-radius:7px;
-          padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;
+          background:#22c55e;color:#fff;border:none;border-radius:8px;
+          padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600;
         ">Use This</button>
       </div>` : '';
 
-    editor.innerHTML = `
-      <div style="color:#fff;font-weight:600;font-size:13px;letter-spacing:.03em;opacity:.85">PICK A FRAME</div>
-      <div style="display:flex;gap:16px;align-items:flex-start">
+    const overlay = document.getElementById(`cover-overlay-${recipeId}`);
+    if (overlay) overlay.innerHTML = `
+      <div style="color:#fff;font-weight:700;font-size:14px;letter-spacing:.06em;opacity:.9;text-transform:uppercase">Pick a Frame</div>
+      <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;justify-content:center">
         ${frameCard(data.preview_45, '45% through')}
         ${frameCard(data.preview_95, '95% through')}
       </div>
-      <div style="width:100%;height:1px;background:rgba(255,255,255,.15);margin:2px 0"></div>
+      <div style="width:100%;max-width:320px;height:1px;background:rgba(255,255,255,.15)"></div>
       <button onclick="openCoverEditor(${recipeId})" style="
-        background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:8px;
-        padding:7px 16px;cursor:pointer;font-size:12px;
+        background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:9px;
+        padding:8px 18px;cursor:pointer;font-size:13px;
       ">Use another format</button>
       <button onclick="closeCoverEditor(${recipeId})" style="
-        color:rgba(255,255,255,.4);background:none;border:none;cursor:pointer;font-size:11px;
+        color:rgba(255,255,255,.4);background:none;border:none;cursor:pointer;font-size:13px;
       ">Cancel</button>`;
   } catch (e) {
     alert('Could not extract frames: ' + e.message);

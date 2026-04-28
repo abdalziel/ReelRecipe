@@ -22,7 +22,7 @@ class Recipe(Base):
     prep_time_minutes = Column(Integer, nullable=True)
     cook_time_minutes = Column(Integer, nullable=True)
     cuisine = Column(String(100), nullable=True)
-    meal_type = Column(String(50), nullable=True)  # breakfast | lunch | dinner | snack
+    meal_type = Column(String(50), nullable=True)  # breakfast | lunch | dinner | snack | smoothie | shake | dessert
     tags = Column(JSON, default=list)
 
     # Steps stored as JSON array of strings

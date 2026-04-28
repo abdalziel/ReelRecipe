@@ -292,19 +292,25 @@ html, body {
   font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
   font-family: 'Inter', inherit;
 }
-.slot-pill.breakfast { background: rgba(251,191,36,.14); color: #FBBF24; }
-.slot-pill.lunch     { background: rgba(251,146,60,.14); color: #FB923C; }
+.slot-pill.breakfast { background: rgba(251,191,36,.14);  color: #FBBF24; }
+.slot-pill.lunch     { background: rgba(251,146,60,.14);  color: #FB923C; }
 .slot-pill.dinner    { background: rgba(167,139,250,.14); color: #A78BFA; }
-.slot-pill.snack     { background: rgba(52,211,153,.14); color: #34D399; }
+.slot-pill.snack     { background: rgba(52,211,153,.14);  color: #34D399; }
+.slot-pill.smoothie  { background: rgba(45,212,191,.14);  color: #2DD4BF; }
+.slot-pill.shake     { background: rgba(251,113,133,.14); color: #FB7185; }
+.slot-pill.dessert   { background: rgba(232,121,249,.14); color: #E879F9; }
 /* Legacy meal-badge kept for modal pills/planner */
 .meal-badge {
   font-size: 11px; font-weight: 600; padding: 3px 8px;
   border-radius: 999px; display: inline-flex; align-items: center;
 }
-.meal-badge.breakfast { background: rgba(251,191,36,.14); color: #FBBF24; }
-.meal-badge.lunch     { background: rgba(251,146,60,.14); color: #FB923C; }
+.meal-badge.breakfast { background: rgba(251,191,36,.14);  color: #FBBF24; }
+.meal-badge.lunch     { background: rgba(251,146,60,.14);  color: #FB923C; }
 .meal-badge.dinner    { background: rgba(167,139,250,.14); color: #A78BFA; }
-.meal-badge.snack     { background: rgba(52,211,153,.14); color: #34D399; }
+.meal-badge.snack     { background: rgba(52,211,153,.14);  color: #34D399; }
+.meal-badge.smoothie  { background: rgba(45,212,191,.14);  color: #2DD4BF; }
+.meal-badge.shake     { background: rgba(251,113,133,.14); color: #FB7185; }
+.meal-badge.dessert   { background: rgba(232,121,249,.14); color: #E879F9; }
 .recipe-macros {
   display: flex; gap: 10px; margin-top: 6px; align-items: baseline;
 }

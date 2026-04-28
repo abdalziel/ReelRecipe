@@ -63,7 +63,7 @@ If it IS a food recipe, return a JSON object with EXACTLY this structure:
 }}
 
 Rules:
-- meal_type must be one of: breakfast, lunch, dinner, snack
+- meal_type must be one of: breakfast, lunch, dinner, snack, smoothie, shake, dessert
 - ingredient category must be one of: produce, protein, dairy, pantry, frozen, spice, beverage, other
 - Estimate macros based on ingredients if not stated — be reasonably accurate
 - If information is missing or unclear, make reasonable culinary assumptions
@@ -138,7 +138,7 @@ _JSON_STRUCTURE = """{
 }"""
 
 _RULES = """Rules:
-- meal_type must be one of: breakfast, lunch, dinner, snack
+- meal_type must be one of: breakfast, lunch, dinner, snack, smoothie, shake, dessert
 - ingredient category must be one of: produce, protein, dairy, pantry, frozen, spice, beverage, other
 - Estimate macros based on ingredients if not stated
 - If information is missing, make reasonable culinary assumptions

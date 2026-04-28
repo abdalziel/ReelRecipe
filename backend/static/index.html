@@ -74,10 +74,13 @@
         <label class="input-label">Email</label>
         <input id="login-email" type="email" placeholder="you@example.com" class="text-input" autocomplete="email" />
       </div>
-      <div class="input-group">
+      <div class="input-group" style="margin-bottom:18px">
         <label class="input-label">Password</label>
-        <input id="login-password" type="password" placeholder="••••••••" class="text-input" autocomplete="current-password"
-               onkeydown="if(event.key==='Enter')submitLogin()" />
+        <div class="pw-reveal-wrap">
+          <input id="login-password" type="password" placeholder="••••••••" class="text-input" autocomplete="current-password"
+                 onkeydown="if(event.key==='Enter')submitLogin()" />
+          <button type="button" class="pw-reveal-btn" onclick="togglePwReveal('login-password',this)" tabindex="-1">👁</button>
+        </div>
       </div>
       <div id="login-error" class="auth-error hidden"></div>
       <button id="login-btn" class="btn btn-primary btn-full" onclick="submitLogin()">Sign In</button>
@@ -93,10 +96,13 @@
         <label class="input-label">Email</label>
         <input id="reg-email" type="email" placeholder="you@example.com" class="text-input" autocomplete="email" />
       </div>
-      <div class="input-group">
+      <div class="input-group" style="margin-bottom:18px">
         <label class="input-label">Password <span style="opacity:.5;font-weight:400">(min 8 chars)</span></label>
-        <input id="reg-password" type="password" placeholder="••••••••" class="text-input" autocomplete="new-password"
-               onkeydown="if(event.key==='Enter')submitRegister()" />
+        <div class="pw-reveal-wrap">
+          <input id="reg-password" type="password" placeholder="••••••••" class="text-input" autocomplete="new-password"
+                 onkeydown="if(event.key==='Enter')submitRegister()" />
+          <button type="button" class="pw-reveal-btn" onclick="togglePwReveal('reg-password',this)" tabindex="-1">👁</button>
+        </div>
       </div>
       <div id="register-error" class="auth-error hidden"></div>
       <button id="register-btn" class="btn btn-primary btn-full" onclick="submitRegister()">Create Account</button>
@@ -121,7 +127,17 @@
   <div class="modal" style="max-width:440px;position:relative" onclick="event.stopPropagation()">
     <button onclick="closeEditAccount()" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;line-height:1;z-index:2">✕</button>
     <div style="padding:28px">
-      <h2 style="font-size:20px;font-weight:800;margin:0 0 20px">Edit Account</h2>
+      <h2 style="font-size:20px;font-weight:800;margin:0 0 16px">Edit Account</h2>
+
+      <!-- Avatar -->
+      <div class="avatar-upload-wrap">
+        <div class="avatar-preview" id="ea-avatar-preview"></div>
+        <div>
+          <label class="avatar-upload-btn" for="ea-avatar-input">Change photo</label>
+          <input id="ea-avatar-input" type="file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="uploadAvatar(this)" />
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">JPG, PNG or WebP · max 5 MB</div>
+        </div>
+      </div>
 
       <div style="display:flex;flex-direction:column;gap:14px">
         <div class="input-group">

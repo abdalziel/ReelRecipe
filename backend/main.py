@@ -47,6 +47,10 @@ if "users" in _insp.get_table_names():
         with engine.connect() as _c:
             _c.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
             _c.commit()
+    if "avatar_url" not in _existing:
+        with engine.connect() as _c:
+            _c.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"))
+            _c.commit()
 
 # ── Promote admin account on startup ─────────────────────────────────────
 # If ADMIN_EMAIL is set and the account exists, ensure is_admin = True.

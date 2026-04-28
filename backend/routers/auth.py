@@ -5,8 +5,10 @@ POST /api/auth/refresh         — refresh token → new access token
 GET  /api/auth/me              — current user profile + membership
 POST /api/auth/claim-anonymous — migrate anonymous (client_id) recipes to the account
 """
+import os
+import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel, EmailStr
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -79,6 +81,7 @@ def _serialize_user(user: User) -> dict:
         "email": user.email,
         "name": user.name,
         "is_admin": user.is_admin,
+        "avatar_url": user.avatar_url,
         "plan": m.plan if m else "free",
         "status": m.status if m else "active",
         "created_at": user.created_at.isoformat(),
@@ -215,6 +218,35 @@ def change_password(
     fresh.password_hash = hash_password(payload.new_password)
     db.commit()
     return {"message": "Password changed successfully."}
+
+
+@router.post("/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    from config import settings as _s
+    allowed = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+    if file.content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WebP images are allowed.")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Avatar must be under 5 MB.")
+
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "jpg"
+    avatars_dir = os.path.join(_s.upload_dir, "avatars")
+    os.makedirs(avatars_dir, exist_ok=True)
+    filename = f"{user.id}_{uuid.uuid4().hex[:8]}.{ext}"
+    path = os.path.join(avatars_dir, filename)
+    with open(path, "wb") as f:
+        f.write(data)
+
+    fresh = db.query(User).filter(User.id == user.id).first()
+    fresh.avatar_url = f"/uploads/avatars/{filename}"
+    db.commit()
+    db.refresh(fresh)
+    return _serialize_user(fresh)
 
 
 @router.post("/claim-admin")

@@ -88,9 +88,12 @@ function _renderAuthSlot() {
     const isAdmin = _authUser.is_admin;
     const plan    = isAdmin ? 'Admin' : (_authUser.plan === 'pro' ? 'Pro' : 'Free');
     const planCls = isAdmin ? 'plan-badge admin' : (_authUser.plan === 'pro' ? 'plan-badge pro' : 'plan-badge free');
+    const avatarInner = _authUser.avatar_url
+      ? `<img src="${escHtml(_authUser.avatar_url)}" alt="${initial}" />`
+      : initial;
     slot.innerHTML = `
       <button class="account-btn" onclick="toggleAccountDropdown(event)">
-        <div class="account-avatar">${initial}</div>
+        <div class="account-avatar">${avatarInner}</div>
         <span class="account-name">${escHtml(_authUser.name || _authUser.email.split('@')[0])}</span>
         <span class="${planCls}">${plan}</span>
       </button>`;
@@ -213,7 +216,53 @@ function openEditAccount() {
   document.getElementById('ea-cur-pw').value = '';
   document.getElementById('ea-new-pw').value = '';
   document.getElementById('ea-confirm-pw').value = '';
+  // Populate avatar preview
+  const prev = document.getElementById('ea-avatar-preview');
+  if (prev) {
+    const initial = (_authUser?.name || _authUser?.email || '?')[0].toUpperCase();
+    prev.innerHTML = _authUser?.avatar_url
+      ? `<img src="${escHtml(_authUser.avatar_url)}" alt="${initial}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+      : initial;
+  }
   document.getElementById('edit-account-modal').classList.remove('hidden');
+}
+
+function togglePwReveal(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  const showing = inp.type === 'text';
+  inp.type = showing ? 'password' : 'text';
+  btn.textContent = showing ? '👁' : '🙈';
+}
+
+async function uploadAvatar(input) {
+  if (!input.files?.[0]) return;
+  const file = input.files[0];
+  const formData = new FormData();
+  formData.append('file', file);
+  const prev = document.getElementById('ea-avatar-preview');
+  if (prev) prev.style.opacity = '0.4';
+  try {
+    const res = await fetch('/api/auth/avatar', {
+      method: 'POST',
+      headers: _authToken ? { 'Authorization': `Bearer ${_authToken}` } : {},
+      body: formData,
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Upload failed'); }
+    const updated = await res.json();
+    _authUser = { ..._authUser, ...updated };
+    _renderAuthSlot();
+    if (prev) {
+      const initial = (_authUser.name || _authUser.email)[0].toUpperCase();
+      prev.innerHTML = `<img src="${escHtml(_authUser.avatar_url)}" alt="${initial}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+      prev.style.opacity = '1';
+    }
+    showToast('Avatar updated.');
+  } catch (e) {
+    if (prev) prev.style.opacity = '1';
+    showToast('Avatar upload failed: ' + e.message);
+  }
+  input.value = '';
 }
 function closeEditAccount() {
   document.getElementById('edit-account-modal').classList.add('hidden');

@@ -40,7 +40,8 @@ async def download_reel(url: str, output_dir: str) -> dict:
         "~/Documents/Claude/ReelRecipe/Cookies/www.instagram.com_cookies.txt"
     )
 
-    _ffmpeg = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
+    _ffmpeg_bin = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
+    _ffmpeg = os.path.dirname(_ffmpeg_bin) if os.path.isfile(_ffmpeg_bin) else _ffmpeg_bin
 
     ydl_opts = {
         "outtmpl": output_template,

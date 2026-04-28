@@ -1163,8 +1163,40 @@ html, body {
   background: var(--accent); color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 700; flex-shrink: 0;
+  overflow: hidden;
 }
+.account-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .account-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Mobile: show avatar only, hide name and badge */
+@media (max-width: 600px) {
+  .account-btn { padding: 4px; }
+  .account-btn .account-name { display: none; }
+  .account-btn .plan-badge   { display: none; }
+}
+
+/* Password reveal row */
+.pw-reveal-wrap { position: relative; display: flex; align-items: center; }
+.pw-reveal-wrap .text-input { flex: 1; padding-right: 40px; }
+.pw-reveal-btn {
+  position: absolute; right: 10px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text3); font-size: 16px; padding: 0; line-height: 1;
+  transition: color .15s;
+}
+.pw-reveal-btn:hover { color: var(--text2); }
+
+/* Avatar upload */
+.avatar-upload-wrap { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.avatar-preview {
+  width: 56px; height: 56px; border-radius: 50%; overflow: hidden;
+  background: var(--accent); border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-upload-btn { font-size: 13px; color: var(--accent); cursor: pointer; font-weight: 600; }
+.avatar-upload-btn:hover { text-decoration: underline; }
 .plan-badge {
   font-size: 10px; font-weight: 700; letter-spacing: .05em;
   padding: 2px 6px; border-radius: 4px; text-transform: uppercase;

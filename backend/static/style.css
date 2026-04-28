@@ -422,6 +422,12 @@ html, body {
 .btn-icon { font-size: 14px; }
 
 /* ── Rating buttons ──────────────────────────────────────────── */
+.card-rating-badge {
+  position: absolute; top: 8px; right: 8px;
+  background: rgba(0,0,0,.55); border-radius: 99px;
+  padding: 3px 8px; font-size: 14px;
+  backdrop-filter: blur(4px); pointer-events: none;
+}
 .rating-row {
   display: flex; gap: 10px; align-items: center; padding: 14px 0;
   border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);

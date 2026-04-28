@@ -484,9 +484,13 @@ function renderGrid(recipes) {
       ? `<img src="${thumb}" class="recipe-thumb" alt="${escHtml(r.title)}" loading="lazy"
            onerror="this.outerHTML='<div class=\\'recipe-thumb-placeholder\\'style=\\'background:${foodGradient(r.id)}\\'><div class=\\'recipe-thumb-overlay\\'></div></div>'">`
       : `<div class="recipe-thumb-placeholder" style="background:${foodGradient(r.id)}"><div class="recipe-thumb-overlay"></div></div>`;
+    const ratingBadge = { love: '❤️', like: '👍', dislike: '👎' }[r.user_rating] || '';
     return `
-      <div class="recipe-card" onclick="openRecipe(${r.id})">
-        ${thumbHtml}
+      <div class="recipe-card" data-recipe-id="${r.id}" onclick="openRecipe(${r.id})">
+        <div style="position:relative">
+          ${thumbHtml}
+          ${ratingBadge ? `<span class="card-rating-badge">${ratingBadge}</span>` : ''}
+        </div>
         <div class="recipe-card-body">
           <div class="recipe-card-title">${escHtml(r.title)}</div>
           <div class="recipe-card-meta">
@@ -853,6 +857,22 @@ function _updateRatingButtons(row) {
     const r = btn.dataset.rating;
     btn.className = 'rating-btn' + (current === r ? ` active-${r}` : '');
   });
+  // Sync the card badge without a full reload
+  const recipeId = row.id.replace('rating-row-', '');
+  const card = document.querySelector(`.recipe-card[data-recipe-id="${recipeId}"]`);
+  if (card) {
+    const thumbWrap = card.querySelector('div[style*="position:relative"]');
+    if (thumbWrap) {
+      let badge = thumbWrap.querySelector('.card-rating-badge');
+      const emoji = { love: '❤️', like: '👍', dislike: '👎' }[current] || '';
+      if (emoji) {
+        if (!badge) { badge = document.createElement('span'); badge.className = 'card-rating-badge'; thumbWrap.appendChild(badge); }
+        badge.textContent = emoji;
+      } else if (badge) {
+        badge.remove();
+      }
+    }
+  }
 }
 
 // ── SINGLE REEL IMPORT ─────────────────────────────────────────────────────

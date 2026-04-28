@@ -1,7 +1,9 @@
 """
 GET  /api/public/recipes           — browse / search public library
+GET  /api/public/rows              — intent-based rows for Explore page
 POST /api/public/recipes/{id}/save — save a public recipe to personal library
 """
+from collections import Counter
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,76 @@ from services.duplicate_detector import find_duplicate
 from services.auth import Scope, get_scope
 
 router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+@router.get("/rows")
+async def explore_rows(
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    """Intent-based rows for the Explore page (For You, New Arrivals, High Protein, etc.)"""
+    all_public = await get_all()
+    rows = []
+
+    # 1. For You — ranked by liked/loved recipe preferences
+    if scope.user:
+        liked_ratings = db.query(RecipeRating).filter(
+            RecipeRating.user_id == scope.user.id,
+            RecipeRating.rating.in_(["like", "love"]),
+        ).all()
+        recipe_ids = [r.recipe_id for r in liked_ratings]
+        if recipe_ids:
+            liked_recipes = db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
+            pref_meal_types = {r.meal_type for r in liked_recipes if r.meal_type}
+            pref_cuisines   = {r.cuisine   for r in liked_recipes if r.cuisine}
+            scored = []
+            for pub in all_public:
+                score = 0
+                if pub.get("meal_type") in pref_meal_types: score += 2
+                if pub.get("cuisine")   in pref_cuisines:   score += 1
+                if score > 0:
+                    scored.append((score, pub))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            for_you = [p for _, p in scored[:12]]
+            if for_you:
+                rows.append({"id": "for_you", "title": "✨ For You", "recipes": for_you})
+
+    # 2. New Arrivals — sorted by added_at desc
+    dated   = sorted([r for r in all_public if r.get("added_at")],
+                     key=lambda r: r["added_at"], reverse=True)
+    new_arrivals = (dated or all_public)[:12]
+    if new_arrivals:
+        rows.append({"id": "new_arrivals", "title": "🆕 New Arrivals", "recipes": new_arrivals})
+
+    # 3. High Protein — sorted by protein_g desc
+    high_protein = sorted(
+        [r for r in all_public if r.get("protein_g")],
+        key=lambda r: r.get("protein_g", 0), reverse=True,
+    )[:12]
+    if high_protein:
+        rows.append({"id": "high_protein", "title": "💪 High Protein", "recipes": high_protein})
+
+    # 4. Quick & Easy — total time ≤ 30 min
+    quick = [
+        r for r in all_public
+        if 0 < (r.get("prep_time_minutes") or 0) + (r.get("cook_time_minutes") or 0) <= 30
+    ][:12]
+    if quick:
+        rows.append({"id": "quick_easy", "title": "⚡ Quick & Easy", "recipes": quick})
+
+    # 5. Per-cuisine rows — cuisines with 3+ recipes
+    cuisine_counts = Counter(r.get("cuisine") for r in all_public if r.get("cuisine"))
+    for cuisine, count in cuisine_counts.most_common():
+        if count < 3:
+            break
+        cuisine_recipes = [r for r in all_public if r.get("cuisine") == cuisine][:12]
+        rows.append({
+            "id": f"cuisine_{cuisine.lower().replace(' ', '_')}",
+            "title": f"🌍 {cuisine}",
+            "recipes": cuisine_recipes,
+        })
+
+    return {"rows": rows}
 
 
 @router.get("/recommended")

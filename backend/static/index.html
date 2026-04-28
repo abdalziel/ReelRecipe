@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=4" />
+  <link rel="stylesheet" href="/static/style.css?v=5" />
 </head>
 <body>
 
@@ -572,9 +572,12 @@
       <button class="chip" data-type="dessert" onclick="setDiscoverFilter(this, 'dessert')">Dessert</button>
     </div>
 
-    <div id="discover-for-you" class="hidden"></div>
-    <div id="discover-grid" class="discover-grid">
-      <div class="loading-state">Loading public recipes…</div>
+    <div id="explore-rows-view">
+      <div class="loading-state"><span class="spinner"></span> Loading…</div>
+    </div>
+    <div id="explore-grid-view" class="hidden">
+      <button id="explore-back-btn" class="explore-back-btn" onclick="_backToRows()">← Browse all</button>
+      <div id="discover-grid" class="discover-grid"></div>
     </div>
   </section>
 
@@ -655,6 +658,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=4"></script>
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>

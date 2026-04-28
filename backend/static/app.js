@@ -1906,63 +1906,101 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-// ── DISCOVER (public library) ──────────────────────────────────────────────
+// ── EXPLORE (public library — Netflix-style rows) ─────────────────────────
 
-let _discoverAll = [];
+let _discoverAll      = [];   // full public recipe list (for grid/search)
+let _exploreRows      = [];   // categorized rows from /api/public/rows
 let _discoverMealFilter = '';
+let _exploreMode      = 'rows'; // 'rows' | 'grid'
 
 async function loadDiscover() {
-  const grid = document.getElementById('discover-grid');
-  const count = document.getElementById('discover-count');
-  const forYouSection = document.getElementById('discover-for-you');
-  grid.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading public recipes…</div>';
+  const rowsView = document.getElementById('explore-rows-view');
+  const count    = document.getElementById('discover-count');
+  rowsView.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
 
   try {
-    // Load personalized recommendations and full library in parallel
-    const [recs, allData] = await Promise.all([
-      _authUser ? api('/api/public/recommended').catch(() => null) : Promise.resolve(null),
+    const [rowsData, allData] = await Promise.all([
+      api('/api/public/rows').catch(() => ({ rows: [] })),
       api('/api/public/recipes'),
     ]);
     _discoverAll = allData.recipes || [];
+    _exploreRows = rowsData.rows  || [];
     count.textContent = `${_discoverAll.length} recipes`;
 
-    // Show "For You" section if we have personalized picks
-    if (forYouSection && recs?.personalized && recs.recipes?.length) {
-      forYouSection.innerHTML = `
-        <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-weight:600;margin-bottom:10px">
-          ✨ For You
-        </div>
-        <div class="recipe-grid" style="margin-bottom:0">${
-          recs.recipes.map(r => {
-            const thumb = thumbUrl(r.thumbnail_url);
-            const thumbHtml = thumb
-              ? `<img class="recipe-thumb" src="${thumb}" alt="${escHtml(r.title)}" loading="lazy" />`
-              : `<div class="recipe-thumb-placeholder" style="background:${foodGradient(r.id || r.title)}"><div class="recipe-thumb-overlay"></div></div>`;
-            return `<div class="public-recipe-card" onclick="viewPublicRecipe('${escHtml(r.id)}')" style="cursor:pointer">
-              ${thumbHtml}
-              <div class="recipe-card-body">
-                <div class="recipe-card-title">${escHtml(r.title)}</div>
-                <div class="recipe-card-meta">${slotPill(r.meal_type)}${r.cuisine ? `<span style="color:var(--text3);font-size:11.5px;font-weight:500">${escHtml(r.cuisine)}</span>` : ''}</div>
-              </div>
-              <div class="public-card-footer" onclick="event.stopPropagation()">
-                <button class="btn btn-primary btn-sm btn-full" onclick="savePublicRecipe('${escHtml(r.id)}', this)">+ Save to My Library</button>
-              </div>
-            </div>`;
-          }).join('')
-        }</div>
-        <div style="height:1px;background:var(--border);margin:20px 0 4px"></div>
-        <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-weight:600;margin-bottom:10px">
-          All Recipes
-        </div>`;
-      forYouSection.classList.remove('hidden');
-    } else if (forYouSection) {
-      forYouSection.classList.add('hidden');
-    }
-
-    renderDiscover(_discoverAll);
+    _exploreMode = 'rows';
+    document.getElementById('explore-rows-view').classList.remove('hidden');
+    document.getElementById('explore-grid-view').classList.add('hidden');
+    renderExploreRows(_exploreRows);
   } catch (e) {
-    grid.innerHTML = `<div class="loading-state" style="color:var(--red)">Could not load public recipes.</div>`;
+    rowsView.innerHTML = `<div class="loading-state" style="color:var(--red)">Could not load public recipes.</div>`;
   }
+}
+
+function renderExploreRows(rows) {
+  const view = document.getElementById('explore-rows-view');
+  if (!rows.length) {
+    view.innerHTML = '<div class="loading-state">No recipes available yet.</div>';
+    return;
+  }
+  view.innerHTML = rows.map(row => {
+    const cards = row.recipes.map(r => {
+      const thumb = thumbUrl(r.thumbnail_url);
+      const totalTime = (r.prep_time_minutes || 0) + (r.cook_time_minutes || 0);
+      const thumbHtml = thumb
+        ? `<img src="${thumb}" alt="${escHtml(r.title)}" loading="lazy">`
+        : `<div class="explore-card-thumb-placeholder" style="background:${foodGradient(r.id || r.title)}"></div>`;
+      const meta = [
+        r.meal_type ? formatMealType(r.meal_type) : null,
+        totalTime   ? `${totalTime}m`             : null,
+        r.protein_g ? `${Math.round(r.protein_g)}g P` : null,
+      ].filter(Boolean).join(' · ');
+      return `
+        <div class="explore-card" onclick="viewPublicRecipe('${escHtml(r.id)}')">
+          <div class="explore-card-thumb">${thumbHtml}</div>
+          <div class="explore-card-body">
+            <div class="explore-card-title">${escHtml(r.title)}</div>
+            ${meta ? `<div class="explore-card-meta">${meta}</div>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="explore-row">
+        <div class="explore-row-header">
+          <span class="explore-row-title">${escHtml(row.title)}</span>
+          <button class="explore-row-see-all" onclick="showExploreAll('${escHtml(row.id)}')">See all →</button>
+        </div>
+        <div class="explore-row-scroll">${cards}</div>
+      </div>`;
+  }).join('');
+}
+
+function showExploreAll(rowId) {
+  const row = _exploreRows.find(r => r.id === rowId);
+  if (!row) return;
+  _switchToExploreGrid(row.recipes, row.title);
+}
+
+function _switchToExploreGrid(recipes, label) {
+  _exploreMode = 'grid';
+  document.getElementById('explore-rows-view').classList.add('hidden');
+  document.getElementById('explore-grid-view').classList.remove('hidden');
+  const btn = document.getElementById('explore-back-btn');
+  if (btn) btn.textContent = `← ${label}`;
+  document.getElementById('discover-count').textContent = `${recipes.length} recipes`;
+  renderDiscover(recipes);
+}
+
+function _backToRows() {
+  _exploreMode = 'rows';
+  _discoverMealFilter = '';
+  const searchEl = document.getElementById('discover-search');
+  if (searchEl) searchEl.value = '';
+  document.querySelectorAll('#discover-meal-filters .chip').forEach(c => c.classList.remove('active'));
+  const allChip = document.querySelector('#discover-meal-filters .chip[data-type=""]');
+  if (allChip) allChip.classList.add('active');
+  document.getElementById('explore-rows-view').classList.remove('hidden');
+  document.getElementById('explore-grid-view').classList.add('hidden');
+  document.getElementById('discover-count').textContent = `${_discoverAll.length} recipes`;
 }
 
 function renderDiscover(recipes) {
@@ -1981,23 +2019,46 @@ function renderDiscover(recipes) {
            <span class="macro-item" style="color:var(--macro-cal)">${Math.round(r.calories)}<span class="macro-unit"> cal</span></span>
            ${r.protein_g ? `<span class="macro-item" style="color:var(--macro-protein)">${Math.round(r.protein_g)}g<span class="macro-unit"> P</span></span>` : ''}
          </div>` : '';
-    return `<div class="public-recipe-card" onclick="viewPublicRecipe('${escHtml(r.id)}')" style="cursor:pointer">
-      ${thumbHtml}
-      <div class="recipe-card-body">
-        <div class="recipe-card-title">${escHtml(r.title)}</div>
-        <div class="recipe-card-meta">
-          ${slotPill(r.meal_type)}
-          ${r.cuisine ? `<span style="color:var(--text3);font-size:11.5px;font-weight:500">${escHtml(r.cuisine)}</span>` : ''}
+    return `
+      <div class="public-recipe-card" onclick="viewPublicRecipe('${escHtml(r.id)}')" style="cursor:pointer">
+        ${thumbHtml}
+        <div class="recipe-card-body">
+          <div class="recipe-card-title">${escHtml(r.title)}</div>
+          <div class="recipe-card-meta">
+            ${slotPill(r.meal_type)}
+            ${r.cuisine ? `<span style="color:var(--text3);font-size:11.5px;font-weight:500">${escHtml(r.cuisine)}</span>` : ''}
+          </div>
+          ${pubMacros}
         </div>
-        ${pubMacros}
-      </div>
-      <div class="public-card-footer" onclick="event.stopPropagation()">
-        <button class="btn btn-primary btn-sm btn-full" data-pub-id="${escHtml(r.id)}" onclick="savePublicRecipe('${escHtml(r.id)}', this)">
-          + Save to My Library
-        </button>
-      </div>
-    </div>`;
+        <div class="public-card-footer" onclick="event.stopPropagation()">
+          <button class="btn btn-primary btn-sm btn-full" data-pub-id="${escHtml(r.id)}" onclick="savePublicRecipe('${escHtml(r.id)}', this)">
+            + Save to My Library
+          </button>
+        </div>
+      </div>`;
   }).join('');
+}
+
+function filterDiscover() {
+  const q = document.getElementById('discover-search').value.toLowerCase().trim();
+  if (!q && !_discoverMealFilter) {
+    _backToRows();
+    return;
+  }
+  const filtered = _discoverAll.filter(r => {
+    const matchType = !_discoverMealFilter || r.meal_type === _discoverMealFilter;
+    const matchQ = !q || (r.title + ' ' + (r.cuisine || '') + ' ' + (r.tags || []).join(' ')).toLowerCase().includes(q);
+    return matchType && matchQ;
+  });
+  const label = [_discoverMealFilter, q ? `"${q}"` : ''].filter(Boolean).join(' · ') || 'Results';
+  _switchToExploreGrid(filtered, label);
+}
+
+function setDiscoverFilter(el, type) {
+  _discoverMealFilter = type;
+  document.querySelectorAll('#discover-meal-filters .chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  filterDiscover();
 }
 
 function viewPublicRecipe(pubId) {
@@ -2008,9 +2069,6 @@ function viewPublicRecipe(pubId) {
   overlay.classList.remove('hidden');
 
   const thumb = thumbUrl(r.thumbnail_url);
-  const heroHtml = thumb
-    ? `<img src="${thumb}" class="modal-hero" alt="${escHtml(r.title)}">`
-    : `<div class="modal-hero-placeholder">🍽️</div>`;
   const totalTime = (r.prep_time_minutes || 0) + (r.cook_time_minutes || 0);
   const pills = [
     r.meal_type ? `<span class="meta-pill meal-badge ${r.meal_type}">${formatMealType(r.meal_type)}</span>` : '',
@@ -2052,13 +2110,12 @@ function viewPublicRecipe(pubId) {
     ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${r.tags.map(t => `<span class="restriction-tag">#${escHtml(t)}</span>`).join('')}</div>`
     : '';
 
-  const pubThumb = thumbUrl(r.thumbnail_url);
-  const pubHero = pubThumb
-    ? `<img src="${pubThumb}" class="modal-hero" alt="${escHtml(r.title)}">`
+  const hero = thumb
+    ? `<img src="${thumb}" class="modal-hero" alt="${escHtml(r.title)}">`
     : `<div class="modal-hero-placeholder">🍽️</div>`;
 
   content.innerHTML = `
-    ${pubHero}
+    ${hero}
     <div class="modal-body">
       <div>
         <div class="modal-title">${escHtml(r.title)}</div>
@@ -2090,7 +2147,6 @@ async function savePublicRecipeFromModal(pubId, btn) {
     btn.textContent = '✓ Saved!';
     btn.style.background = 'var(--green)';
     loadLibrary();
-    // Mirror the state on the grid card
     const gridBtn = document.querySelector(`.public-recipe-card [data-pub-id="${pubId}"]`);
     if (gridBtn) { gridBtn.textContent = '✓ Saved'; gridBtn.disabled = true; gridBtn.style.background = 'var(--green)'; }
   } catch (e) {
@@ -2107,42 +2163,24 @@ async function savePublicRecipeFromModal(pubId, btn) {
   }
 }
 
-function filterDiscover() {
-  const q = document.getElementById('discover-search').value.toLowerCase();
-  const filtered = _discoverAll.filter(r => {
-    const matchType = !_discoverMealFilter || r.meal_type === _discoverMealFilter;
-    const matchQ = !q || (r.title + ' ' + (r.cuisine || '') + ' ' + (r.tags || []).join(' ')).toLowerCase().includes(q);
-    return matchType && matchQ;
-  });
-  renderDiscover(filtered);
-}
-
-function setDiscoverFilter(el, type) {
-  _discoverMealFilter = type;
-  document.querySelectorAll('#discover-meal-filters .chip').forEach(c => c.classList.remove('active'));
-  el.classList.add('active');
-  filterDiscover();
-}
-
 async function savePublicRecipe(pubId, btn) {
   btn.disabled = true;
   btn.textContent = 'Saving…';
   try {
-    const result = await api(`/api/public/recipes/${pubId}/save`, { method: 'POST' });
+    await api(`/api/public/recipes/${pubId}/save`, { method: 'POST' });
     btn.textContent = '✓ Saved!';
     btn.style.background = 'var(--green)';
     loadLibrary();
   } catch (e) {
     btn.disabled = false;
     btn.textContent = '+ Save to My Library';
-    // Show the duplicate message or other error inline
     const card = btn.closest('.public-recipe-card');
-    let errEl = card.querySelector('.discover-err');
+    let errEl = card?.querySelector('.discover-err');
     if (!errEl) {
       errEl = document.createElement('div');
       errEl.className = 'discover-err';
       errEl.style.cssText = 'font-size:11px;color:var(--red);padding:4px 12px 8px;line-height:1.4';
-      card.appendChild(errEl);
+      card?.appendChild(errEl);
     }
     errEl.textContent = e.message;
   }

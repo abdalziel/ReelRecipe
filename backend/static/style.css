@@ -1099,6 +1099,52 @@ html, body {
 .discover-search-row .search-box { max-width: 360px; }
 .discover-filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 
+/* ── Explore rows (Netflix-style) ──────────────────── */
+.explore-row { margin-bottom: 32px; }
+.explore-row-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 12px;
+}
+.explore-row-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.explore-row-see-all {
+  background: none; border: none; cursor: pointer;
+  font-size: 12.5px; color: var(--accent); font-weight: 500; padding: 0;
+}
+.explore-row-see-all:hover { opacity: 0.75; }
+.explore-row-scroll {
+  display: flex; gap: 12px;
+  overflow-x: auto; padding-bottom: 8px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.explore-row-scroll::-webkit-scrollbar { display: none; }
+.explore-card {
+  flex-shrink: 0; width: 162px; scroll-snap-align: start; cursor: pointer;
+  border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border);
+  transition: transform .15s, box-shadow .15s;
+}
+.explore-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.28); }
+.explore-card-thumb { width: 162px; height: 112px; overflow: hidden; }
+.explore-card-thumb img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.explore-card-thumb-placeholder { width: 100%; height: 100%; }
+.explore-card-body { padding: 8px 10px 10px; }
+.explore-card-title {
+  font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.explore-card-meta { margin-top: 5px; font-size: 11px; color: var(--text3); }
+.explore-back-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: none; cursor: pointer;
+  color: var(--accent); font-size: 13px; font-weight: 500;
+  padding: 0; margin-bottom: 16px;
+}
+.explore-back-btn:hover { opacity: 0.75; }
+
 @media (max-width: 768px) {
   /* ── Header ──────────────────────────────────────── */
   .header-inner {

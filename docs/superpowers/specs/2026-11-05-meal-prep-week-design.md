@@ -1,7 +1,7 @@
 # Meal Prep Week: design
 
 Date: 2026-11-05
-Status: questions answered 2026-11-05, awaiting Blair's approval of the full document
+Status: all three open questions answered 2026-11-05, awaiting Blair's approval of the full document
 Repo: ReelRecipe (web app in `backend/`, served at reelrecipe.ai on Railway)
 
 ## Intent
@@ -64,7 +64,7 @@ Sunday is the cook day. The grocery trip is Friday or Sunday, one trip, covering
 - UI copy: complete sentences, no copy that restates a label, no em or en dashes mid-sentence, no controls Blair did not ask for (memories: `feedback_full_sentences_ui_copy`, `feedback_no_obvious_ui_copy`, `feedback_no_em_dashes`, `feedback_no_unrequested_controls`).
 - Every wait the user sits through gets a determinate progress bar with a time estimate. The 170-recipe import is roughly 170 model calls and will take minutes.
 - Build passes locally before any commit.
-- Database persistence must be verified before the import runs against production. `config.py` defaults to a SQLite file. The builder must confirm whether the Railway service has a persistent volume or a `DATABASE_URL` pointing at a real database. If it does not, the import is run only after that is fixed, otherwise the recipes vanish on the next deploy. Blair decides how to fix it if it is broken (see open questions).
+- Production database: Postgres on Railway (verified 2026-11-05, see open question 3). Local development uses the SQLite file in `backend/`, which is stale (no `users` table). Schema changes must work on both.
 - Existing code to build on, not replace: `services/recipe_extractor.py` (`_JSON_STRUCTURE`, `_RULES`, `_parse_response`, `categorize_ingredient`), `services/duplicate_detector.find_duplicate`, `services/diet_analyzer.suggest_meal_plan`, `services/shopping_list.create_shopping_list_from_recipes`, `services/auth.Scope` and `get_scope`, the Planner, Diet and Shopping tabs in `static/app.js`.
 
 ## Piece 1: markdown import
@@ -189,4 +189,4 @@ Raised by the builder check on 2026-11-05. Answers get written back into the sec
 
 1. **Public library.** Should any of the 170 imported recipes be auto-published to the public ReelRecipe library the way reel imports are? The design currently says no: they stay private, and 112 of them are low-confidence. Claude's recommendation is to keep it that way and publish selectively later.
 2. **Snacks.** ANSWERED 2026-11-05: yes, about one a day, sometimes multiple servings, some days none. Written into the weekly shape and the chooser rules above.
-3. **Production database.** The live service runs on Railway. The code defaults to a SQLite file and the Railway CLI on this Mac is logged out, so persistence could not be verified. `psycopg2-binary` is pinned and `.env.example` documents a Railway Postgres URL, which suggests Postgres was intended. Blair will run `railway login` after approving this document so the builder can confirm. The import does not run against production until this is settled.
+3. **Production database.** ANSWERED 2026-11-05 by checking Railway: the ReelRecipe service (Railway project `adaptable-wonder`, service `ReelRecipe`) has `DATABASE_URL` set to the Postgres service in project `lucky-renewal`. Data persists across deploys. The import may run against production once Pieces 1 and 2 are approved on a preview. Side note for the builder: no R2 variables are set in production and the service has no volume, so thumbnails written to `uploads/` on the server do not survive a redeploy. Out of scope here, but do not rely on local uploads for anything new.

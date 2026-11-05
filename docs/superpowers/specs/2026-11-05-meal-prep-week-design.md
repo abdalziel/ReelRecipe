@@ -1,7 +1,7 @@
 # Meal Prep Week: design
 
 Date: 2026-11-05
-Status: draft, awaiting Blair's approval
+Status: questions answered 2026-11-05, awaiting Blair's approval of the full document
 Repo: ReelRecipe (web app in `backend/`, served at reelrecipe.ai on Railway)
 
 ## Intent
@@ -49,6 +49,9 @@ What would make this a failure even if it technically works:
 | Breakfast | 7 | 3 premade backups | 4 (ingredients stocked) |
 | Lunch | 7 | 7 | 0 |
 | Dinner | 7 | 4 | 3 |
+| Snack | about 7 | all | 0 |
+
+Snacks: about one a day, sometimes more than one serving, and some days none. Snacks are a Sunday batch (one snack recipe, portion count set by the planner to land the calories, a day may go without). Claude's call on prepped versus fresh; Blair said "about 1 snack per day, might be multiple servings, some days might not snack".
 
 Repeating the same meal several times in a week is fine and preferred. Backup breakfasts are for mornings he is running late; the other four are cooked fresh from stocked ingredients.
 
@@ -133,6 +136,7 @@ Rules the prompt enforces:
 
 - Build the week from batches. Target two lunch batches, two prepped-dinner batches and one backup-breakfast batch, with repeats across days. The builder may let the model pick one or three batches when the macros work better, but never seven distinct lunches.
 - Fresh dinners (3) and fresh breakfasts (4) come from recipes with total time of 30 minutes or less. Fresh breakfasts may repeat.
+- Snacks: one snack recipe as a Sunday batch, about seven servings across the week. The planner uses snack servings as the slack that lands each day on its calorie target: a day may get two servings or none. Snack recipes are those with meal type snack, smoothie, shake or dessert.
 - Daily totals land within 5 percent of the calorie target and at or above the protein target. Carbs and fat are secondary.
 - When training-day and rest-day calories differ, the difference is made on the carb side of a prepped meal (a larger or smaller rice or tortilla portion, written as a per-day note on the entry), not by choosing different recipes for different days. This is Claude's call from the brainstorm; Blair has not objected.
 - Recipes flagged for review are allowed but the model prefers unflagged ones when macros are close.
@@ -184,5 +188,5 @@ The existing shopping tab behaviour (check items off, keep lists) is unchanged.
 Raised by the builder check on 2026-11-05. Answers get written back into the sections above.
 
 1. **Public library.** Should any of the 170 imported recipes be auto-published to the public ReelRecipe library the way reel imports are? The design currently says no: they stay private, and 112 of them are low-confidence. Claude's recommendation is to keep it that way and publish selectively later.
-2. **Snacks.** The weekly shape has breakfast, lunch and dinner only, but the day grid and the current prompt include a snack slot, and hitting a build-phase calorie target with three meals a day is hard. Does the week include snacks (the daily smoothie, hard-boiled eggs, protein desserts from the collection), and if so are they prepped Sunday or fresh?
-3. **Production database.** The live service runs on Railway. The code defaults to a SQLite file and the Railway CLI on this Mac is logged out, so persistence could not be verified. `psycopg2-binary` is pinned and `.env.example` documents a Railway Postgres URL, which suggests Postgres was intended. Blair runs `railway login` so the builder can confirm, or tells the builder what the service is using. The import does not run against production until this is settled.
+2. **Snacks.** ANSWERED 2026-11-05: yes, about one a day, sometimes multiple servings, some days none. Written into the weekly shape and the chooser rules above.
+3. **Production database.** The live service runs on Railway. The code defaults to a SQLite file and the Railway CLI on this Mac is logged out, so persistence could not be verified. `psycopg2-binary` is pinned and `.env.example` documents a Railway Postgres URL, which suggests Postgres was intended. Blair will run `railway login` after approving this document so the builder can confirm. The import does not run against production until this is settled.

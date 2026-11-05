@@ -68,7 +68,7 @@ Sunday is the cook day. The grocery trip is Friday or Sunday, one trip, covering
 
 ### The source file
 
-`Fooooood-Recipes-Complete-170.md` (about 244 KB, 4,572 lines). Layout:
+`imports/Fooooood-Recipes-Complete-170.md` in this repo (the `imports/` folder is gitignored; the file is Blair's personal collection and stays out of version control). About 244 KB, 4,572 lines. Layout:
 
 - A title block, an index of 170 numbered titles, then four `## Batch` sections.
 - Each recipe is a `### N. Title` heading followed by bold-labelled prose paragraphs.
@@ -89,6 +89,9 @@ Sunday is the cook day. The grocery trip is Friday or Sunday, one trip, covering
 - The import runs as a background job with a progress endpoint. The Import tab gets a "Import recipes from a markdown file" entry with a file picker, then a determinate progress bar (recipes done of total, time remaining from the measured per-recipe pace) and a final summary: imported, skipped as duplicate, failed, flagged for review.
 - Failures on individual recipes do not stop the job. They are listed at the end with the recipe title and the reason, and can be retried.
 - The importer is general: any markdown file whose recipes are under `###` headings works. It is not special-cased to this one file beyond the Source-line regex.
+- Public library: the reel and web importers call `_auto_publish()` in `routers/reels.py`, which commits each recipe to the public GitHub repo before the duplicate check. The markdown importer does NOT do this (see open question 1 for Blair's ruling). Recipes can be published later one at a time through whatever path the app already offers.
+- Job pattern: reuse the one in `routers/instagram.py` and `services/instagram_scraper.py` (module-level current job, `BackgroundTasks`, a status endpoint, and `startBulkPoll()` in `static/app.js` polling every two seconds). The existing bulk-import card in the Import tab is blurred as work in progress; the markdown importer gets its own card.
+- SDK: `anthropic==0.40.0` predates structured outputs. The builder upgrades the SDK (and `httpx`, pinned alongside it) as part of Piece 1 and confirms the existing extractors still pass. Claude's call.
 
 ### Left to the builder
 
@@ -100,7 +103,8 @@ Sunday is the cook day. The grocery trip is Friday or Sunday, one trip, covering
 
 ### Decided
 
-- `meal_plan.py`, `diet.py` and `shopping_list.py` take `Scope` via `get_scope` like `recipes.py` does, and every query is filtered to the caller. `MealPlan`, `DietPlan` and `ShoppingList` get `user_id` and `client_id` columns with the same ownership rules as `Recipe`. Existing rows with neither are treated as legacy and assigned to Blair's account in a one-off migration (he is the only real user of these tabs today).
+- The Planner, Diet and Shopping tabs require sign-in. `meal_plan.py`, `diet.py` and `shopping_list.py` use `require_user` and filter every query by `user_id`. There is no anonymous access to these three tabs, because the anonymous rule on recipes (`client_id IS NULL` rows are visible to any anonymous caller) would expose legacy rows, and Prep Week stores the weekly shape on the user. `MealPlan`, `DietPlan` and `ShoppingList` get a `user_id` column only. Claude's call.
+- Existing rows with no owner are legacy and are assigned in a one-off migration to the user whose email matches `ADMIN_EMAIL` in `config.py` (Blair's account; he is the only real user of these tabs today).
 - The AI-align step reads only the caller's recipes. Today it calls `db.query(Recipe).all()`.
 - All model identifiers move to `claude-sonnet-5` and `claude-haiku-5-5` as set out in the constraints. Prompts are not rewritten in this piece beyond what the model change needs.
 - The shopping-list "split into two runs by halves" logic is removed; Piece 3 replaces it with a split by purpose.
@@ -117,6 +121,7 @@ Sunday is the cook day. The grocery trip is Friday or Sunday, one trip, covering
 - **Prep mode** on each `MealPlanEntry`: `prep` (cooked Sunday, portioned), `fresh` (cooked that day), or `backup` (premade breakfast kept for late mornings). Backup breakfasts sit on the days they are most likely needed, but the planner treats them as a Sunday batch of three.
 - **Batch**: a derived grouping, not a table. All `prep` or `backup` entries sharing a recipe form one batch whose portion count is the sum of their servings. Batches are what the prep sheet and the grocery list are built from.
 - **Diet plan** (existing) carries the phase targets copied from Forge: daily calories, protein, carbs, fat. It gains optional training-day and rest-day calories and an optional set of training weekdays. If those are blank, every day uses the single daily target.
+- **Entering the targets**: the Diet tab today only creates plans by having the model analyze free text or a PDF, which is too loose for the one input the feature depends on. The Diet tab gets a small numeric form: phase name, daily calories, protein, carbs, fat, and the optional training-day and rest-day calories with a weekday picker. Saving it creates or updates the active diet plan directly, no model call. The text and PDF paths stay for everyone else. This is a control Blair did not ask for, added because the feature cannot work without an exact entry path. Claude's call.
 
 ### The week chooser
 
@@ -134,6 +139,8 @@ Rules the prompt enforces:
 - Output is structured: one entry per day and slot with recipe id, servings, prep mode and an optional portion note. The builder uses the SDK's structured-output support rather than parsing free text.
 
 The Planner shows the proposed week in the existing day grid, with each entry marked prep, fresh or backup. Blair swaps entries with the existing recipe picker. Accepting the week is what unlocks the prep sheet and grocery list; until then the align action can be rerun.
+
+Which week: today the Planner loads the newest plan and never makes another, and `getMonday()` returns the current week's Monday, so on a Sunday it would plan the week that is ending. Instead: when the Planner opens and the newest plan is accepted or its week has ended, the app creates the plan for the coming Monday and shows that. On a Sunday, that is tomorrow's week. There is no "new week" button; the rollover is automatic. Past weeks stay reachable through the existing plan list. Claude's call.
 
 ### Prep sheet
 
@@ -174,4 +181,8 @@ The existing shopping tab behaviour (check items off, keep lists) is unchanged.
 
 ## Open questions for Blair
 
-Filled in after the builder check.
+Raised by the builder check on 2026-11-05. Answers get written back into the sections above.
+
+1. **Public library.** Should any of the 170 imported recipes be auto-published to the public ReelRecipe library the way reel imports are? The design currently says no: they stay private, and 112 of them are low-confidence. Claude's recommendation is to keep it that way and publish selectively later.
+2. **Snacks.** The weekly shape has breakfast, lunch and dinner only, but the day grid and the current prompt include a snack slot, and hitting a build-phase calorie target with three meals a day is hard. Does the week include snacks (the daily smoothie, hard-boiled eggs, protein desserts from the collection), and if so are they prepped Sunday or fresh?
+3. **Production database.** The live service runs on Railway. The code defaults to a SQLite file and the Railway CLI on this Mac is logged out, so persistence could not be verified. `psycopg2-binary` is pinned and `.env.example` documents a Railway Postgres URL, which suggests Postgres was intended. Blair runs `railway login` so the builder can confirm, or tells the builder what the service is using. The import does not run against production until this is settled.

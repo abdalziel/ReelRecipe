@@ -1,7 +1,7 @@
 # Meal Prep Week: design
 
 Date: 2026-11-05
-Status: all three open questions answered 2026-11-05, awaiting Blair's approval of the full document
+Status: SUPERSEDED 2026-11-05. Blair chose to build meal prep inside Forge instead (see `forge/docs/superpowers/specs/2026-11-05-forge-meal-prep-week-design.md`). ReelRecipe is unhosted; the Railway trial is not renewed. Kept for the product decisions it records.
 Repo: ReelRecipe (web app in `backend/`, served at reelrecipe.ai on Railway)
 
 ## Intent
